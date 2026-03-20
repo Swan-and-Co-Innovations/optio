@@ -1,4 +1,6 @@
-import Link from "next/link";
+"use client";
+
+import { useRouter } from "next/navigation";
 import { StateBadge } from "./state-badge";
 import { classifyError } from "@optio/shared";
 import { api } from "@/lib/api-client";
@@ -22,12 +24,13 @@ interface TaskCardProps {
 }
 
 export function TaskCard({ task }: TaskCardProps) {
+  const router = useRouter();
   const repoName = task.repoUrl.replace(/.*\/\/[^/]+\//, "").replace(/\.git$/, "");
 
   return (
-    <Link
-      href={`/tasks/${task.id}`}
-      className="block p-4 rounded-lg border border-border bg-bg-card hover:bg-bg-hover transition-colors overflow-hidden"
+    <div
+      onClick={() => router.push(`/tasks/${task.id}`)}
+      className="block p-4 rounded-lg border border-border bg-bg-card hover:bg-bg-hover transition-colors overflow-hidden cursor-pointer"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
@@ -58,16 +61,14 @@ export function TaskCard({ task }: TaskCardProps) {
           )}
           <button
             onClick={async (e) => {
-              e.preventDefault();
               e.stopPropagation();
               const btn = e.currentTarget;
               btn.textContent = "Retrying...";
               btn.setAttribute("disabled", "true");
               try {
                 await api.retryTask(task.id);
-                // Force refresh the task list
                 window.location.href = window.location.href;
-              } catch (err) {
+              } catch {
                 btn.textContent = "Failed";
                 setTimeout(() => {
                   btn.textContent = "Retry";
@@ -100,6 +101,6 @@ export function TaskCard({ task }: TaskCardProps) {
           </a>
         )}
       </div>
-    </Link>
+    </div>
   );
 }
