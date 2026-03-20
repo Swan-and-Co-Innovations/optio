@@ -197,6 +197,49 @@ export function startPrWatcherWorker() {
             }
           }
 
+          // Auto-merge if: CI passing + all review subtasks completed + autoMerge enabled
+          if (checksStatus === "passing" && prData.state === "open") {
+            const [repoConf] = await db.select().from(repos).where(eq(repos.repoUrl, task.repoUrl));
+
+            if (repoConf?.autoMerge) {
+              const { checkBlockingSubtasks } = await import("../services/subtask-service.js");
+              const subtaskStatus = await checkBlockingSubtasks(task.id);
+
+              // Merge if: no blocking subtasks, or all blocking subtasks complete
+              if (subtaskStatus.allComplete) {
+                try {
+                  const mergeRes = await fetch(
+                    `https://api.github.com/repos/${owner}/${repo}/pulls/${prNumber}/merge`,
+                    {
+                      method: "PUT",
+                      headers: { ...headers, "Content-Type": "application/json" },
+                      body: JSON.stringify({ merge_method: "squash" }),
+                    },
+                  );
+
+                  if (mergeRes.ok) {
+                    await taskService.transitionTask(
+                      task.id,
+                      TaskState.COMPLETED,
+                      "auto_merged",
+                      `PR #${prNumber} auto-merged (CI passing, reviews complete)`,
+                    );
+                    logger.info({ taskId: task.id, prNumber }, "PR auto-merged");
+                    continue; // Skip remaining state transitions for this task
+                  } else {
+                    const body = (await mergeRes.json().catch(() => ({}))) as any;
+                    logger.warn(
+                      { taskId: task.id, status: mergeRes.status, msg: body.message },
+                      "Auto-merge failed",
+                    );
+                  }
+                } catch (err) {
+                  logger.warn({ err, taskId: task.id }, "Auto-merge error");
+                }
+              }
+            }
+          }
+
           // Handle state transitions
           if (prData.merged) {
             // PR merged → complete the task

@@ -1,6 +1,6 @@
 import { eq, and, sql, desc } from "drizzle-orm";
 import { db } from "../db/client.js";
-import { tasks } from "../db/schema.js";
+import { tasks, repos } from "../db/schema.js";
 import { TaskState } from "@optio/shared";
 import * as taskService from "./task-service.js";
 import { taskQueue } from "../workers/task-worker.js";
@@ -150,7 +150,57 @@ export async function onSubtaskComplete(subtaskId: string) {
 
     if (anyApproved && parent.prUrl) {
       logger.info({ taskId: parent.id }, "All blocking subtasks complete, review approved");
-      // Could auto-merge here if enabled
+
+      // Auto-merge if enabled on the repo
+      const [repoConfig] = await db.select().from(repos).where(eq(repos.repoUrl, parent.repoUrl));
+
+      if (repoConfig?.autoMerge) {
+        try {
+          const { retrieveSecret } = await import("./secret-service.js");
+          const githubToken = await retrieveSecret("GITHUB_TOKEN");
+
+          // Parse PR number from URL
+          const prMatch = parent.prUrl.match(/\/pull\/(\d+)/);
+          const repoMatch = parent.repoUrl.match(/github\.com[/:]([^/]+)\/([^/.]+)/);
+          if (prMatch && repoMatch) {
+            const prNumber = prMatch[1];
+            const [, owner, repo] = repoMatch;
+
+            const mergeRes = await fetch(
+              `https://api.github.com/repos/${owner}/${repo}/pulls/${prNumber}/merge`,
+              {
+                method: "PUT",
+                headers: {
+                  Authorization: `Bearer ${githubToken}`,
+                  "User-Agent": "Optio",
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  merge_method: "squash",
+                }),
+              },
+            );
+
+            if (mergeRes.ok) {
+              await taskService.transitionTask(
+                parent.id,
+                TaskState.COMPLETED,
+                "auto_merged",
+                `PR #${prNumber} merged automatically after review approval`,
+              );
+              logger.info({ taskId: parent.id, prNumber }, "PR auto-merged after review approval");
+            } else {
+              const body = await mergeRes.json().catch(() => ({}));
+              logger.warn(
+                { taskId: parent.id, status: mergeRes.status, body },
+                "Auto-merge failed",
+              );
+            }
+          }
+        } catch (err) {
+          logger.warn({ err, taskId: parent.id }, "Failed to auto-merge");
+        }
+      }
     }
   }
 
