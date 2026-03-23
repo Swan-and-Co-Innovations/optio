@@ -1,7 +1,7 @@
 import { Queue, Worker } from "bullmq";
 import { eq, sql } from "drizzle-orm";
 import { db } from "../db/client.js";
-import { tasks, repos } from "../db/schema.js";
+import { tasks, repos, taskEvents } from "../db/schema.js";
 import { TaskState } from "@optio/shared";
 import { retrieveSecret } from "../services/secret-service.js";
 import * as taskService from "../services/task-service.js";
@@ -52,12 +52,14 @@ export function determinePrAction(opts: {
   checksStatus: string;
   prevChecksStatus: string | null;
   reviewStatus: string;
+  prevReviewStatus: string | null;
   autoMerge: boolean;
   autoResume: boolean;
   reviewEnabled: boolean;
   reviewTrigger: string;
   hasReviewSubtask: boolean;
   blockingSubtasksComplete: boolean;
+  taskState: string;
 }): { action: string; detail?: string } {
   // PR merged
   if (opts.prMerged) return { action: "complete", detail: "pr_merged" };
@@ -65,13 +67,16 @@ export function determinePrAction(opts: {
   // PR closed without merge
   if (opts.prState === "closed") return { action: "fail", detail: "pr_closed" };
 
+  // Failed tasks can be completed/failed via PR events above, but cannot be resumed
+  const canResume = opts.taskState !== "failed";
+
   // Merge conflicts
   if (
     opts.mergeable === false &&
     opts.prState === "open" &&
     opts.prevChecksStatus !== "conflicts"
   ) {
-    if (opts.autoResume) return { action: "resume_conflicts" };
+    if (opts.autoResume && canResume) return { action: "resume_conflicts" };
     return { action: "needs_attention", detail: "merge_conflicts" };
   }
 
@@ -81,7 +86,7 @@ export function determinePrAction(opts: {
     opts.prevChecksStatus !== "failing" &&
     opts.prState === "open"
   ) {
-    if (opts.autoResume) return { action: "resume_ci_failure" };
+    if (opts.autoResume && canResume) return { action: "resume_ci_failure" };
     return { action: "needs_attention", detail: "ci_failing" };
   }
 
@@ -113,9 +118,9 @@ export function determinePrAction(opts: {
     if (opts.blockingSubtasksComplete) return { action: "auto_merge" };
   }
 
-  // Review changes requested
-  if (opts.reviewStatus === "changes_requested") {
-    if (opts.autoResume) return { action: "resume_review" };
+  // Review changes requested (only on new review, not stale status)
+  if (opts.reviewStatus === "changes_requested" && opts.prevReviewStatus !== "changes_requested") {
+    if (opts.autoResume && canResume) return { action: "resume_review" };
     return { action: "needs_attention", detail: "review_changes_requested" };
   }
 
@@ -264,19 +269,21 @@ export function startPrWatcherWorker() {
           const { checkBlockingSubtasks } = await import("../services/subtask-service.js");
           const subtaskStatus = await checkBlockingSubtasks(task.id);
 
-          const action = determinePrAction({
+          let action = determinePrAction({
             prState: prData.state,
             prMerged: !!prData.merged,
             mergeable: prData.mergeable ?? null,
             checksStatus,
             prevChecksStatus: task.prChecksStatus,
             reviewStatus,
+            prevReviewStatus: task.prReviewStatus,
             autoMerge: repoConfig?.autoMerge ?? false,
             autoResume: repoConfig?.autoResume ?? false,
             reviewEnabled: repoConfig?.reviewEnabled ?? false,
             reviewTrigger: repoConfig?.reviewTrigger ?? "manual",
             hasReviewSubtask: existingReview.length > 0,
             blockingSubtasksComplete: subtaskStatus.allComplete,
+            taskState: task.state,
           });
 
           // --- Execute the action ---
@@ -299,6 +306,27 @@ export function startPrWatcherWorker() {
               { jobId: `${task.id}-${jobSuffix}-${Date.now()}` },
             );
           };
+
+          // Loop prevention: cap auto-resumes to avoid infinite cycles
+          const MAX_AUTO_RESUMES = 3;
+          if (["resume_conflicts", "resume_ci_failure", "resume_review"].includes(action.action)) {
+            const [{ count: resumeCount }] = await db
+              .select({ count: sql<number>`count(*)` })
+              .from(taskEvents)
+              .where(
+                sql`${taskEvents.taskId} = ${task.id} AND ${taskEvents.trigger} LIKE 'auto_resume_%'`,
+              );
+            if (Number(resumeCount) >= MAX_AUTO_RESUMES) {
+              logger.info(
+                { taskId: task.id, resumeCount, action: action.action },
+                "Auto-resume limit reached — escalating to needs_attention",
+              );
+              action = {
+                action: "needs_attention",
+                detail: `auto_resume_limit (${action.action})`,
+              };
+            }
+          }
 
           try {
             switch (action.action) {

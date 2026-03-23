@@ -252,13 +252,33 @@ export async function execTaskInRepoPod(
     `export ENV_FRESH`,
     `if [ "$ENV_FRESH" = "true" ]; then echo "[optio] Fresh environment — tools may need to be installed"; else echo "[optio] Warm environment — tools from previous tasks should be available"; fi`,
     // Create worktree from the latest main branch
+    // Use flock to serialize git operations in the shared /workspace/repo directory —
+    // concurrent execs doing fetch/checkout/reset will corrupt each other without this.
+    `echo "[optio] Acquiring repo lock..."`,
+    `exec 9>/workspace/.repo-lock`,
+    `flock 9`,
+    `echo "[optio] Repo lock acquired"`,
     `cd /workspace/repo`,
     `git fetch origin`,
     `git checkout ${env.OPTIO_REPO_BRANCH ?? "main"} 2>/dev/null || true`,
     `git reset --hard origin/${env.OPTIO_REPO_BRANCH ?? "main"}`,
     `git worktree remove --force /workspace/tasks/${taskId} 2>/dev/null || true`,
     `git branch -D optio/task-${taskId} 2>/dev/null || true`,
-    `git worktree add /workspace/tasks/${taskId} -b optio/task-${taskId} origin/${env.OPTIO_REPO_BRANCH ?? "main"}`,
+    // Try creating fresh worktree; if branch already exists (Claude Code may create
+    // extra worktrees like -wt that hold the branch), clean up stale refs and retry
+    `if ! git worktree add /workspace/tasks/${taskId} -b optio/task-${taskId} origin/${env.OPTIO_REPO_BRANCH ?? "main"} 2>/dev/null; then`,
+    `  echo "[optio] Cleaning up stale worktree references..."`,
+    `  git worktree remove --force /workspace/tasks/${taskId}-wt 2>/dev/null || true`,
+    `  for wt_path in $(git worktree list --porcelain | grep -B1 "branch refs/heads/optio/task-${taskId}$" | grep "^worktree " | cut -d" " -f2-); do`,
+    `    git worktree remove --force "$wt_path" 2>/dev/null || true`,
+    `  done`,
+    `  git worktree prune`,
+    `  git branch -D optio/task-${taskId} 2>/dev/null || true`,
+    `  git worktree add /workspace/tasks/${taskId} -b optio/task-${taskId} origin/${env.OPTIO_REPO_BRANCH ?? "main"}`,
+    `fi`,
+    // Release the repo lock — worktree is created, safe to run in parallel from here
+    `flock -u 9`,
+    `exec 9>&-`,
     `cd /workspace/tasks/${taskId}`,
     `export OPTIO_TASK_ID="${taskId}"`,
     // Write setup files if provided
@@ -286,15 +306,16 @@ export async function execTaskInRepoPod(
     `    print(f'  wrote {p}')`,
     `"`,
     `fi`,
+    // Set up cleanup trap before running the agent — ensures worktree is removed
+    // even if the agent exits non-zero (set -e would otherwise kill the script)
+    `trap 'cd /workspace/repo; git worktree remove --force /workspace/tasks/${taskId} 2>/dev/null || true; git worktree remove --force /workspace/tasks/${taskId}-wt 2>/dev/null || true; git worktree prune 2>/dev/null || true; git branch -D optio/task-${taskId} 2>/dev/null || true' EXIT`,
+    `set +e`,
     // Run the agent command
     ...agentCommand,
-    // Mark environment as set up for future tasks
-    `touch /home/agent/.optio-env-ready`,
-    // Cleanup worktree on exit (best-effort)
-    `EXIT_CODE=$?`,
-    `cd /workspace/repo`,
-    `git worktree remove --force /workspace/tasks/${taskId} 2>/dev/null || true`,
-    `exit $EXIT_CODE`,
+    `AGENT_EXIT=$?`,
+    // Mark environment as set up for future tasks (only on success)
+    `[ $AGENT_EXIT -eq 0 ] && touch /home/agent/.optio-env-ready`,
+    `exit $AGENT_EXIT`,
   ].join("\n");
 
   return rt.exec(handle, ["bash", "-c", script], { tty: false });

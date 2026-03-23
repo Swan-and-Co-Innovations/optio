@@ -90,12 +90,14 @@ describe("determinePrAction", () => {
     checksStatus: "none",
     prevChecksStatus: null as string | null,
     reviewStatus: "none",
+    prevReviewStatus: null as string | null,
     autoMerge: false,
     autoResume: false,
     reviewEnabled: false,
     reviewTrigger: "on_ci_pass",
     hasReviewSubtask: false,
     blockingSubtasksComplete: true,
+    taskState: "pr_opened",
   };
 
   it("completes on PR merge", () => {
@@ -235,6 +237,39 @@ describe("determinePrAction", () => {
         reviewStatus: "changes_requested",
       }),
     ).toEqual({ action: "needs_attention", detail: "review_changes_requested" });
+  });
+
+  it("does not re-trigger resume_review on stale changes_requested", () => {
+    expect(
+      determinePrAction({
+        ...defaults,
+        reviewStatus: "changes_requested",
+        prevReviewStatus: "changes_requested",
+        autoResume: true,
+      }),
+    ).toEqual({ action: "none" });
+  });
+
+  it("skips resume actions for failed tasks", () => {
+    expect(
+      determinePrAction({
+        ...defaults,
+        checksStatus: "failing",
+        prevChecksStatus: "passing",
+        autoResume: true,
+        taskState: "failed",
+      }),
+    ).toEqual({ action: "needs_attention", detail: "ci_failing" });
+  });
+
+  it("still completes failed tasks on PR merge", () => {
+    expect(
+      determinePrAction({
+        ...defaults,
+        prMerged: true,
+        taskState: "failed",
+      }),
+    ).toEqual({ action: "complete", detail: "pr_merged" });
   });
 
   it("returns none when nothing actionable", () => {

@@ -121,8 +121,8 @@ describe("state-machine", () => {
       expect(canTransition(TaskState.RUNNING, TaskState.QUEUED)).toBe(false);
     });
 
-    it("rejects direct provisioning → queued (must go through failed)", () => {
-      expect(canTransition(TaskState.PROVISIONING, TaskState.QUEUED)).toBe(false);
+    it("allows provisioning → queued for concurrency re-queue", () => {
+      expect(canTransition(TaskState.PROVISIONING, TaskState.QUEUED)).toBe(true);
     });
   });
 
