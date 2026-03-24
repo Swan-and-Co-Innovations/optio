@@ -171,7 +171,14 @@ export default function OverviewPage() {
     return sum + (t.costUsd ? parseFloat(t.costUsd) : 0);
   }, 0);
 
-  const { nodes, pods, services, events, summary } = cluster ?? {
+  const {
+    nodes,
+    pods,
+    services,
+    events,
+    summary,
+    repoPods: repoPodRecords,
+  } = cluster ?? {
     nodes: [],
     pods: [],
     services: [],
@@ -184,7 +191,13 @@ export default function OverviewPage() {
       totalNodes: 0,
       readyNodes: 0,
     },
+    repoPods: [],
   };
+
+  // Build a lookup from pod name → repoPod record (for task indicators)
+  const repoPodByName = new Map<string, any>(
+    (repoPodRecords ?? []).map((rp: any) => [rp.podName, rp]),
+  );
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
@@ -442,6 +455,7 @@ export default function OverviewPage() {
                 const podTasks = pod.isOptioManaged
                   ? recentTasks.filter((t: any) => t.containerId === pod.name)
                   : [];
+                const repoPod = pod.isOptioManaged ? repoPodByName.get(pod.name) : null;
 
                 return (
                   <div key={pod.name} className="rounded-md border border-border bg-bg-card">
@@ -468,6 +482,7 @@ export default function OverviewPage() {
                             <span className="text-[9px] px-1 py-0.5 rounded bg-primary/10 text-primary">
                               workspace
                             </span>
+                            {repoPod && <CapacityIndicator repoPod={repoPod} />}
                             <ChevronDown
                               className={cn(
                                 "w-3 h-3 text-text-muted ml-auto shrink-0 transition-transform",
@@ -484,6 +499,20 @@ export default function OverviewPage() {
                       </div>
                       <div className="flex items-center gap-2 text-[10px] text-text-muted mt-1 ml-4">
                         <span className={color}>{pod.status}</span>
+                        {repoPod && (
+                          <>
+                            <span className="flex items-center gap-0.5">
+                              <Activity className="w-2.5 h-2.5" />
+                              {repoPod.activeTaskCount ?? 0} running
+                            </span>
+                            {(repoPod.queuedTaskCount ?? 0) > 0 && (
+                              <span className="flex items-center gap-0.5 text-warning">
+                                <Clock className="w-2.5 h-2.5" />
+                                {repoPod.queuedTaskCount} queued
+                              </span>
+                            )}
+                          </>
+                        )}
                         {pod.cpuMillicores != null && (
                           <span className="flex items-center gap-0.5">
                             <Cpu className="w-2.5 h-2.5" />
@@ -658,6 +687,27 @@ function UsageMeter({
         </div>
       )}
     </div>
+  );
+}
+
+function CapacityIndicator({ repoPod }: { repoPod: any }) {
+  const active = repoPod.activeTaskCount ?? 0;
+  const max = repoPod.maxConcurrentTasks ?? 2;
+  const pct = max > 0 ? Math.min((active / max) * 100, 100) : 0;
+  const color = pct >= 100 ? "bg-error" : pct >= 50 ? "bg-warning" : "bg-success";
+
+  return (
+    <span className="flex items-center gap-1.5 text-[9px] text-text-muted tabular-nums">
+      <span className="h-1.5 w-10 rounded-full bg-border/50 overflow-hidden inline-block">
+        <span
+          className={cn("h-full rounded-full block transition-all", color)}
+          style={{ width: `${pct}%` }}
+        />
+      </span>
+      <span>
+        {active}/{max}
+      </span>
+    </span>
   );
 }
 

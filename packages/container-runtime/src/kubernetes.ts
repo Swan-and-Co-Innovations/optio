@@ -39,8 +39,9 @@ export class KubernetesContainerRuntime implements ContainerRuntime {
   async create(spec: ContainerSpec): Promise<ContainerHandle> {
     await this.ensureNamespace();
 
-    const taskId = spec.labels["taskId"] ?? spec.labels["task-id"] ?? crypto.randomUUID();
-    const podName = `optio-task-${taskId}`;
+    const podName =
+      spec.name ??
+      `optio-task-${spec.labels["taskId"] ?? spec.labels["task-id"] ?? crypto.randomUUID()}`;
 
     const env: V1EnvVar[] = Object.entries(spec.env).map(([name, value]) => {
       const envVar = new V1EnvVar();

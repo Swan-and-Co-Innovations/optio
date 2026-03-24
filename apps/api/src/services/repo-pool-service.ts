@@ -4,7 +4,7 @@ import { db } from "../db/client.js";
 import { repoPods } from "../db/schema.js";
 import { getRuntime } from "./container-service.js";
 import type { ContainerHandle, ContainerSpec, ExecSession, RepoImageConfig } from "@optio/shared";
-import { DEFAULT_AGENT_IMAGE, PRESET_IMAGES } from "@optio/shared";
+import { DEFAULT_AGENT_IMAGE, PRESET_IMAGES, generateRepoPodName } from "@optio/shared";
 import { logger } from "../logger.js";
 
 const IDLE_TIMEOUT_MS = parseInt(process.env.OPTIO_REPO_POD_IDLE_MS ?? "600000", 10); // 10 min default
@@ -139,6 +139,7 @@ spec:
   try {
     // Launch a pod that clones the repo then sleeps forever
     const spec: ContainerSpec = {
+      name: generateRepoPodName(repoUrl),
       image,
       command: ["/opt/optio/repo-init.sh"],
       env: {

@@ -1,8 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import { KubeConfig, CoreV1Api } from "@kubernetes/client-node";
 import { db } from "../db/client.js";
-import { repoPods, tasks, podHealthEvents } from "../db/schema.js";
-import { eq, desc } from "drizzle-orm";
+import { repoPods, tasks, podHealthEvents, repos } from "../db/schema.js";
+import { eq, desc, and, inArray, sql } from "drizzle-orm";
 
 function getK8sConfig() {
   const kc = new KubeConfig();
@@ -191,12 +191,53 @@ export async function clusterRoutes(app: FastifyInstance) {
       // Get Optio-specific data
       const repoPodRecords = await db.select().from(repoPods);
 
+      // Get per-repo task indicators: queued counts and maxConcurrentTasks
+      const repoUrls = repoPodRecords.map((rp) => rp.repoUrl);
+
+      // Queued task counts per repo
+      const queuedCounts =
+        repoUrls.length > 0
+          ? await db
+              .select({
+                repoUrl: tasks.repoUrl,
+                count: sql<number>`count(*)::int`,
+              })
+              .from(tasks)
+              .where(
+                and(inArray(tasks.repoUrl, repoUrls), inArray(tasks.state, ["queued", "pending"])),
+              )
+              .groupBy(tasks.repoUrl)
+          : [];
+
+      const queuedMap = new Map(queuedCounts.map((r) => [r.repoUrl, r.count]));
+
+      // Max concurrent tasks per repo (from repos config)
+      const repoConfigs =
+        repoUrls.length > 0
+          ? await db
+              .select({
+                repoUrl: repos.repoUrl,
+                maxConcurrentTasks: repos.maxConcurrentTasks,
+              })
+              .from(repos)
+              .where(inArray(repos.repoUrl, repoUrls))
+          : [];
+
+      const maxConcurrentMap = new Map(repoConfigs.map((r) => [r.repoUrl, r.maxConcurrentTasks]));
+
+      // Enrich repo pod records with task indicators
+      const enrichedRepoPods = repoPodRecords.map((rp) => ({
+        ...rp,
+        queuedTaskCount: queuedMap.get(rp.repoUrl) ?? 0,
+        maxConcurrentTasks: maxConcurrentMap.get(rp.repoUrl) ?? 2,
+      }));
+
       reply.send({
         nodes,
         pods,
         services,
         events,
-        repoPods: repoPodRecords,
+        repoPods: enrichedRepoPods,
         summary: {
           totalPods: pods.length,
           runningPods: pods.filter((p) => p.status === "Running").length,
