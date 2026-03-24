@@ -103,16 +103,18 @@ async function createRepoPod(
   // Create a PVC for persistent home directory (tools, caches)
   const pvcName = `optio-home-${repoUrl.replace(/[^a-zA-Z0-9]/g, "-").slice(0, 40)}`;
   try {
-    const { execSync } = await import("node:child_process");
-    // Check if PVC already exists
-    const exists = execSync(
+    const { execFile } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    const execFileAsync = promisify(execFile);
+
+    // Check if PVC already exists (async to avoid blocking the event loop,
+    // which kills BullMQ heartbeats and triggers stall detection)
+    const { stdout: existsOut } = await execFileAsync("bash", [
+      "-c",
       `kubectl get pvc ${pvcName} -n optio 2>/dev/null && echo "yes" || echo "no"`,
-      { encoding: "utf-8" },
-    ).trim();
-    if (exists !== "yes") {
-      execSync(
-        `kubectl apply -f - <<EOF
-apiVersion: v1
+    ]);
+    if (existsOut.trim() !== "yes") {
+      const pvcManifest = `apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: ${pvcName}
@@ -124,10 +126,10 @@ spec:
   accessModes: [ReadWriteOnce]
   resources:
     requests:
-      storage: 5Gi
-EOF`,
-        { encoding: "utf-8" },
-      );
+      storage: 5Gi`;
+      await execFileAsync("kubectl", ["apply", "-f", "-", "-n", "optio"], {
+        input: pvcManifest,
+      } as any);
       logger.info({ pvcName }, "Created PVC for repo pod home directory");
     }
   } catch (err) {

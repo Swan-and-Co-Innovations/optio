@@ -472,6 +472,11 @@ export function startTaskWorker() {
     {
       connection: connectionOpts,
       concurrency: parseInt(process.env.OPTIO_MAX_CONCURRENT ?? "5", 10),
+      // Task jobs run for minutes/hours — BullMQ defaults (30s lock, 30s stall
+      // check, max 1 stall) are far too aggressive and cause "job stalled" failures.
+      lockDuration: 600_000, // 10 min lock
+      stalledInterval: 300_000, // check for stalls every 5 min
+      maxStalledCount: 3, // allow 3 stall detections before failing
     },
   );
 
