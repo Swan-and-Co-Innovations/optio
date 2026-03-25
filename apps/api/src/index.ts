@@ -51,6 +51,15 @@ process.on("uncaughtException", (err) => {
 async function main() {
   const app = await buildServer();
 
+  // Bind HTTP server first so turbo sees output quickly.
+  // Heavy Redis/BullMQ work is deferred to after listen() to avoid
+  // blocking Turborepo's process management and stalling sibling
+  // dev tasks (e.g. @optio/web never starting).
+  await app.listen({ port: PORT, host: HOST });
+  logger.info(`API server listening on ${HOST}:${PORT}`);
+
+  // --- Background initialization (after listen) ---
+
   // Clean stale repeat jobs from previous server sessions
   await Promise.all([
     cleanRepeatJobs("pr-watcher"),
@@ -75,12 +84,11 @@ async function main() {
   const webhookWorker = startWebhookWorker();
   logger.info("Webhook worker started");
 
-  // Re-enqueue any tasks orphaned by a Redis restart
-  await reconcileOrphanedTasks();
-
-  // Start HTTP server
-  await app.listen({ port: PORT, host: HOST });
-  logger.info(`API server listening on ${HOST}:${PORT}`);
+  // Re-enqueue any tasks orphaned by a Redis restart.
+  // The heavy obliterate() call runs last to minimize startup impact.
+  reconcileOrphanedTasks().catch((err) => {
+    logger.error(err, "Failed to reconcile orphaned tasks");
+  });
 
   // Graceful shutdown
   const shutdown = async () => {

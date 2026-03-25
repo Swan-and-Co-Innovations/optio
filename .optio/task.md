@@ -1,31 +1,28 @@
-# feat: Helm chart production hardening
+# fix: Turborepo silently drops web app during pnpm dev
 
-feat: Helm chart production hardening
+fix: Turborepo silently drops web app during pnpm dev
 
 ## Problem
 
-The Helm chart works for local dev but isn't production-ready.
+Running `pnpm dev` (which calls `turbo dev`) sometimes only starts the API server — the Next.js web app never launches. No error is shown. The web app works fine when started manually with `cd apps/web && npx next dev`.
 
-## Missing
+## Observed Behavior
 
-- **TLS**: No cert-manager integration or default TLS configuration for ingress
-- **Resource quotas**: No namespace-level quotas — rogue agents can consume all cluster resources
-- **Multi-replica API**: Default `replicas: 1` with no leader election story for BullMQ workers
-- **Agent PVCs**: Chart doesn't create PVCs for repo pod home directories
-- **Pod anti-affinity**: No rules to spread API/web across nodes
-- **Image pull secrets**: No support for pulling from private registries
-- **Secure defaults**: Postgres password defaults to `optio-prod-change-me`, auth disabled by default
+- `turbo dev` output only shows `@optio/api:dev` logs
+- No `@optio/web:dev` output at all
+- API healthy on :4000, web unreachable on :3100
+- Seems intermittent — may relate to the `taskQueue.obliterate()` call blocking the event loop early in API startup
 
-## Acceptance Criteria
+## Workaround
 
-- [ ] Ingress TLS with cert-manager annotation support
-- [ ] Namespace resource quotas configurable in values.yaml
-- [ ] API replica count configurable with documented worker scaling story
-- [ ] Agent PVC template included
-- [ ] Pod anti-affinity rules for API and web
-- [ ] Image pull secret support
-- [ ] Secure defaults (require encryption key, require auth in production)
+Start web manually: `cd apps/web && npx next dev --port 3100`
+
+## Investigation Needed
+
+- Check if turbo is timing out on the web task
+- Check if the API's startup is blocking turbo's process management
+- May need to split API and web into separate `pnpm dev:api` and `pnpm dev:web` scripts
 
 ---
 
-_Optio Task ID: 8b558fe5-bb2e-4568-84f7-f06b96af2674_
+_Optio Task ID: 27c499f3-58d1-4957-b6dc-3652a63caf91_

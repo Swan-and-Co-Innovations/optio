@@ -8,6 +8,8 @@
   },
   "scripts": {
     "dev": "turbo dev",
+    "dev:api": "turbo dev --filter=@optio/api",
+    "dev:web": "turbo dev --filter=@optio/web",
     "build": "turbo build",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
