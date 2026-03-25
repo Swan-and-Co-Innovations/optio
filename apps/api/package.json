@@ -23,6 +23,7 @@
     "@optio/shared": "workspace:*",
     "@optio/ticket-providers": "workspace:*",
     "bullmq": "^5.52.2",
+    "cron-parser": "^5.5.0",
     "dotenv": "^16.5.0",
     "drizzle-orm": "^0.44.2",
     "fastify": "^5.3.3",

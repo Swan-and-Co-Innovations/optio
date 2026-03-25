@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { usePageTitle } from "@/hooks/use-page-title";
 import { api } from "@/lib/api-client";
 import { cn, formatRelativeTime, truncate } from "@/lib/utils";
 import Link from "next/link";
@@ -168,6 +169,7 @@ function ChartTooltipContent({
 }
 
 export default function CostsPage() {
+  usePageTitle("Costs");
   const [data, setData] = useState<CostAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

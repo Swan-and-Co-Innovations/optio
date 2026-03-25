@@ -2,11 +2,13 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { usePageTitle } from "@/hooks/use-page-title";
 import { api } from "@/lib/api-client";
 import { Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
 export default function NewTaskPage() {
+  usePageTitle("New Task");
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [repos, setRepos] = useState<any[]>([]);

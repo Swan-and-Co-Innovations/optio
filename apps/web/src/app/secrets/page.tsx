@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePageTitle } from "@/hooks/use-page-title";
 import { api } from "@/lib/api-client";
 import { toast } from "sonner";
 import { Loader2, Plus, Trash2, KeyRound, Globe, FolderGit2, Filter } from "lucide-react";
 
 export default function SecretsPage() {
+  usePageTitle("Secrets");
   const [secrets, setSecrets] = useState<any[]>([]);
   const [repos, setRepos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);

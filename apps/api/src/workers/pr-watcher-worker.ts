@@ -315,7 +315,12 @@ export function startPrWatcherWorker() {
               );
               await taskQueue.add(
                 "process-task",
-                { taskId: task.id, resumeSessionId: task.sessionId, resumePrompt: prompt },
+                {
+                  taskId: task.id,
+                  resumeSessionId: task.sessionId,
+                  resumePrompt: prompt,
+                  restartFromBranch: !!task.prUrl,
+                },
                 { jobId: `${task.id}-${jobSuffix}-${Date.now()}` },
               );
             };

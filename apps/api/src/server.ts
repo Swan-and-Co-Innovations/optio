@@ -18,6 +18,8 @@ import { subtaskRoutes } from "./routes/subtasks.js";
 import { analyticsRoutes } from "./routes/analytics.js";
 import { webhookRoutes } from "./routes/webhooks.js";
 import { sessionRoutes } from "./routes/sessions.js";
+import { scheduleRoutes } from "./routes/schedules.js";
+import { commentRoutes } from "./routes/comments.js";
 import { logStreamWs } from "./ws/log-stream.js";
 import { eventsWs } from "./ws/events.js";
 import { sessionTerminalWs } from "./ws/session-terminal.js";
@@ -70,6 +72,8 @@ export async function buildServer() {
   await app.register(analyticsRoutes);
   await app.register(webhookRoutes);
   await app.register(sessionRoutes);
+  await app.register(scheduleRoutes);
+  await app.register(commentRoutes);
 
   // WebSocket routes
   await app.register(logStreamWs);

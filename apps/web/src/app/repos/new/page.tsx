@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { usePageTitle } from "@/hooks/use-page-title";
 import { api } from "@/lib/api-client";
 import { toast } from "sonner";
 import { PRESET_IMAGES, type PresetImageId } from "@optio/shared";
@@ -29,6 +30,7 @@ const STEPS = [
 type StepId = (typeof STEPS)[number]["id"];
 
 export default function NewRepoPage() {
+  usePageTitle("Add Repository");
   const router = useRouter();
   const [stepIndex, setStepIndex] = useState(0);
   const currentStep = STEPS[stepIndex];

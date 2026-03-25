@@ -1,6 +1,7 @@
 "use client";
 
 import { use, useEffect, useState } from "react";
+import { usePageTitle } from "@/hooks/use-page-title";
 import { api } from "@/lib/api-client";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -28,6 +29,7 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
   const { id } = use(params);
   const router = useRouter();
   const [repo, setRepo] = useState<any>(null);
+  usePageTitle(repo?.fullName ?? "Repository");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 

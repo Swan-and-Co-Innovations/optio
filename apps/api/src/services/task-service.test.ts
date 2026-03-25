@@ -15,13 +15,15 @@ vi.mock("../db/client.js", () => ({
     delete: vi.fn().mockReturnThis(),
     limit: vi.fn().mockReturnThis(),
     offset: vi.fn().mockReturnThis(),
+    leftJoin: vi.fn().mockReturnThis(),
   },
 }));
 
 vi.mock("../db/schema.js", () => ({
   tasks: { id: "id", state: "state", createdAt: "createdAt", taskId: "taskId" },
-  taskEvents: { taskId: "taskId", createdAt: "createdAt" },
+  taskEvents: { taskId: "taskId", createdAt: "createdAt", userId: "userId" },
   taskLogs: { taskId: "taskId", timestamp: "timestamp" },
+  users: { id: "id", displayName: "display_name", avatarUrl: "avatar_url" },
 }));
 
 vi.mock("./event-bus.js", () => ({ publishEvent: vi.fn() }));

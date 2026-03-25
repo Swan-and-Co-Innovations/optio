@@ -85,6 +85,7 @@ export const taskEvents = pgTable(
     toState: taskStateEnum("to_state").notNull(),
     trigger: text("trigger").notNull(),
     message: text("message"),
+    userId: uuid("user_id").references(() => users.id),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index("task_events_task_id_idx").on(table.taskId)],
@@ -299,6 +300,64 @@ export const sessionPrs = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index("session_prs_session_id_idx").on(table.sessionId)],
+);
+
+export const schedules = pgTable(
+  "schedules",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    description: text("description"),
+    cronExpression: text("cron_expression").notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    taskConfig: jsonb("task_config")
+      .$type<{
+        title: string;
+        prompt: string;
+        repoUrl: string;
+        repoBranch?: string;
+        agentType: string;
+        maxRetries?: number;
+        priority?: number;
+      }>()
+      .notNull(),
+    lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+    nextRunAt: timestamp("next_run_at", { withTimezone: true }),
+    createdBy: uuid("created_by"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("schedules_enabled_next_run_idx").on(table.enabled, table.nextRunAt)],
+);
+
+export const scheduleRuns = pgTable(
+  "schedule_runs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    scheduleId: uuid("schedule_id")
+      .notNull()
+      .references(() => schedules.id, { onDelete: "cascade" }),
+    taskId: uuid("task_id").references(() => tasks.id),
+    status: text("status").notNull().default("triggered"), // "triggered" | "completed" | "failed"
+    error: text("error"),
+    triggeredAt: timestamp("triggered_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("schedule_runs_schedule_id_idx").on(table.scheduleId)],
+);
+
+export const taskComments = pgTable(
+  "task_comments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    taskId: uuid("task_id")
+      .notNull()
+      .references(() => tasks.id),
+    userId: uuid("user_id").references(() => users.id),
+    content: text("content").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("task_comments_task_id_idx").on(table.taskId)],
 );
 
 export const promptTemplates = pgTable("prompt_templates", {

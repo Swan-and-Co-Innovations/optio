@@ -40,7 +40,22 @@ export interface TaskEvent {
   toState: TaskState;
   trigger: string;
   message?: string;
+  userId?: string;
   createdAt: Date;
+}
+
+export interface TaskComment {
+  id: string;
+  taskId: string;
+  userId?: string;
+  content: string;
+  createdAt: Date;
+  updatedAt: Date;
+  user?: {
+    id: string;
+    displayName: string;
+    avatarUrl?: string;
+  };
 }
 
 export interface CreateTaskInput {

@@ -93,15 +93,50 @@ export const api = {
       body: JSON.stringify(prompt ? { prompt } : {}),
     }),
 
-  getTaskLogs: (id: string, params?: { limit?: number; offset?: number }) => {
+  getTaskLogs: (
+    id: string,
+    params?: { limit?: number; offset?: number; search?: string; logType?: string },
+  ) => {
     const qs = new URLSearchParams();
     if (params?.limit) qs.set("limit", String(params.limit));
     if (params?.offset) qs.set("offset", String(params.offset));
+    if (params?.search) qs.set("search", params.search);
+    if (params?.logType) qs.set("logType", params.logType);
     const query = qs.toString();
     return request<{ logs: any[] }>(`/api/tasks/${id}/logs${query ? `?${query}` : ""}`);
   },
 
+  exportTaskLogs: (id: string, params?: { format?: string; search?: string; logType?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.format) qs.set("format", params.format);
+    if (params?.search) qs.set("search", params.search);
+    if (params?.logType) qs.set("logType", params.logType);
+    const query = qs.toString();
+    const url = `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000"}/api/tasks/${id}/logs/export${query ? `?${query}` : ""}`;
+    return url;
+  },
+
   getTaskEvents: (id: string) => request<{ events: any[] }>(`/api/tasks/${id}/events`),
+
+  // Comments & Activity
+  getTaskComments: (id: string) => request<{ comments: any[] }>(`/api/tasks/${id}/comments`),
+
+  addTaskComment: (id: string, content: string) =>
+    request<{ comment: any }>(`/api/tasks/${id}/comments`, {
+      method: "POST",
+      body: JSON.stringify({ content }),
+    }),
+
+  updateTaskComment: (taskId: string, commentId: string, content: string) =>
+    request<{ comment: any }>(`/api/tasks/${taskId}/comments/${commentId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ content }),
+    }),
+
+  deleteTaskComment: (taskId: string, commentId: string) =>
+    request<void>(`/api/tasks/${taskId}/comments/${commentId}`, { method: "DELETE" }),
+
+  getTaskActivity: (id: string) => request<{ activity: any[] }>(`/api/tasks/${id}/activity`),
 
   // Secrets
   listSecrets: (scope?: string) => {
@@ -476,4 +511,107 @@ export const api = {
       method: "POST",
       body: JSON.stringify(data),
     }),
+
+  // Schedules
+  listSchedules: () =>
+    request<{
+      schedules: Array<{
+        id: string;
+        name: string;
+        description: string | null;
+        cronExpression: string;
+        enabled: boolean;
+        taskConfig: {
+          title: string;
+          prompt: string;
+          repoUrl: string;
+          repoBranch?: string;
+          agentType: string;
+          maxRetries?: number;
+          priority?: number;
+        };
+        lastRunAt: string | null;
+        nextRunAt: string | null;
+        createdAt: string;
+        updatedAt: string;
+      }>;
+    }>("/api/schedules"),
+
+  getSchedule: (id: string) =>
+    request<{
+      schedule: {
+        id: string;
+        name: string;
+        description: string | null;
+        cronExpression: string;
+        enabled: boolean;
+        taskConfig: {
+          title: string;
+          prompt: string;
+          repoUrl: string;
+          repoBranch?: string;
+          agentType: string;
+          maxRetries?: number;
+          priority?: number;
+        };
+        lastRunAt: string | null;
+        nextRunAt: string | null;
+        createdAt: string;
+        updatedAt: string;
+      };
+    }>(`/api/schedules/${id}`),
+
+  createSchedule: (data: {
+    name: string;
+    description?: string;
+    cronExpression: string;
+    enabled?: boolean;
+    taskConfig: {
+      title: string;
+      prompt: string;
+      repoUrl: string;
+      repoBranch?: string;
+      agentType: string;
+      maxRetries?: number;
+      priority?: number;
+    };
+  }) =>
+    request<{ schedule: any }>("/api/schedules", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  updateSchedule: (id: string, data: Record<string, unknown>) =>
+    request<{ schedule: any }>(`/api/schedules/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  deleteSchedule: (id: string) => request<void>(`/api/schedules/${id}`, { method: "DELETE" }),
+
+  triggerSchedule: (id: string) =>
+    request<{ task: any }>(`/api/schedules/${id}/trigger`, { method: "POST" }),
+
+  getScheduleRuns: (id: string, limit?: number) => {
+    const qs = limit ? `?limit=${limit}` : "";
+    return request<{
+      runs: Array<{
+        id: string;
+        scheduleId: string;
+        taskId: string | null;
+        status: string;
+        error: string | null;
+        triggeredAt: string;
+      }>;
+    }>(`/api/schedules/${id}/runs${qs}`);
+  },
+
+  validateCron: (cronExpression: string) =>
+    request<{ valid: boolean; error?: string; nextRun?: string; description?: string }>(
+      "/api/schedules/validate-cron",
+      {
+        method: "POST",
+        body: JSON.stringify({ cronExpression }),
+      },
+    ),
 };

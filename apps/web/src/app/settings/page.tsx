@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { usePageTitle } from "@/hooks/use-page-title";
 import { api } from "@/lib/api-client";
 import { toast } from "sonner";
 import { Loader2, Bell, RefreshCw, Shield, CheckCircle2, XCircle } from "lucide-react";
@@ -385,6 +386,7 @@ function AuthenticationSettings() {
 }
 
 export default function SettingsPage() {
+  usePageTitle("Settings");
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [providers, setProviders] = useState<any[]>([]);

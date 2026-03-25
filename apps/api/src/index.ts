@@ -6,6 +6,7 @@ import { startTicketSyncWorker } from "./workers/ticket-sync-worker.js";
 import { startRepoCleanupWorker } from "./workers/repo-cleanup-worker.js";
 import { startPrWatcherWorker } from "./workers/pr-watcher-worker.js";
 import { startWebhookWorker } from "./workers/webhook-worker.js";
+import { startScheduleWorker } from "./workers/schedule-worker.js";
 import { logger } from "./logger.js";
 
 const redisConnection = {
@@ -65,6 +66,7 @@ async function main() {
     cleanRepeatJobs("pr-watcher"),
     cleanRepeatJobs("repo-cleanup"),
     cleanRepeatJobs("ticket-sync"),
+    cleanRepeatJobs("schedule-checker"),
   ]);
 
   // Start BullMQ workers (each re-registers its repeat job)
@@ -84,6 +86,9 @@ async function main() {
   const webhookWorker = startWebhookWorker();
   logger.info("Webhook worker started");
 
+  const scheduleWorker = startScheduleWorker();
+  logger.info("Schedule worker started");
+
   // Re-enqueue any tasks orphaned by a Redis restart.
   // The heavy obliterate() call runs last to minimize startup impact.
   reconcileOrphanedTasks().catch((err) => {
@@ -98,6 +103,7 @@ async function main() {
     await repoCleanupWorker.close();
     await prWatcherWorker.close();
     await webhookWorker.close();
+    await scheduleWorker.close();
     await app.close();
     process.exit(0);
   };
