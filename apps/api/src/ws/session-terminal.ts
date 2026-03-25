@@ -1,11 +1,13 @@
 import type { FastifyInstance } from "fastify";
 import { getRuntime } from "../services/container-service.js";
-import { getSession } from "../services/interactive-session-service.js";
+import { getSession, addSessionPr } from "../services/interactive-session-service.js";
 import { db } from "../db/client.js";
 import { repoPods } from "../db/schema.js";
 import { eq } from "drizzle-orm";
 import { logger } from "../logger.js";
 import type { ContainerHandle, ExecSession } from "@optio/shared";
+
+const PR_URL_REGEX = /https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/(\d+)/g;
 
 export async function sessionTerminalWs(app: FastifyInstance) {
   app.get("/ws/sessions/:sessionId/terminal", { websocket: true }, async (socket, req) => {
@@ -70,21 +72,40 @@ export async function sessionTerminalWs(app: FastifyInstance) {
     ].join("\n");
 
     let execSession: ExecSession | null = null;
+    const detectedPrs = new Set<number>();
+
+    // Scan a chunk of terminal output for GitHub PR URLs and register them
+    const scanForPrUrls = (chunk: Buffer) => {
+      const text = chunk.toString("utf-8");
+      for (const match of text.matchAll(PR_URL_REGEX)) {
+        const prNumber = parseInt(match[1], 10);
+        if (!detectedPrs.has(prNumber)) {
+          detectedPrs.add(prNumber);
+          const prUrl = match[0];
+          addSessionPr(sessionId, prUrl, prNumber).catch((err) => {
+            log.warn({ err, prUrl }, "Failed to register session PR");
+          });
+          log.info({ prUrl, prNumber }, "Detected PR from session terminal");
+        }
+      }
+    };
 
     try {
       execSession = await rt.exec(handle, ["bash", "-c", setupScript], { tty: true });
 
-      // Pipe exec stdout → WebSocket
+      // Pipe exec stdout → WebSocket + scan for PR URLs
       execSession.stdout.on("data", (chunk: Buffer) => {
         if (socket.readyState === 1) {
           socket.send(chunk);
         }
+        scanForPrUrls(chunk);
       });
 
       execSession.stderr.on("data", (chunk: Buffer) => {
         if (socket.readyState === 1) {
           socket.send(chunk);
         }
+        scanForPrUrls(chunk);
       });
 
       // Pipe WebSocket → exec stdin
