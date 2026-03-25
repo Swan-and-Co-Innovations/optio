@@ -5,6 +5,7 @@ import { startTaskWorker, reconcileOrphanedTasks } from "./workers/task-worker.j
 import { startTicketSyncWorker } from "./workers/ticket-sync-worker.js";
 import { startRepoCleanupWorker } from "./workers/repo-cleanup-worker.js";
 import { startPrWatcherWorker } from "./workers/pr-watcher-worker.js";
+import { startWebhookWorker } from "./workers/webhook-worker.js";
 import { logger } from "./logger.js";
 
 const redisConnection = {
@@ -71,6 +72,9 @@ async function main() {
   const prWatcherWorker = startPrWatcherWorker();
   logger.info("PR watcher worker started");
 
+  const webhookWorker = startWebhookWorker();
+  logger.info("Webhook worker started");
+
   // Re-enqueue any tasks orphaned by a Redis restart
   await reconcileOrphanedTasks();
 
@@ -85,6 +89,7 @@ async function main() {
     await ticketSyncWorker.close();
     await repoCleanupWorker.close();
     await prWatcherWorker.close();
+    await webhookWorker.close();
     await app.close();
     process.exit(0);
   };

@@ -200,6 +200,41 @@ export const sessions = pgTable("sessions", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const webhookEventEnum = pgEnum("webhook_event", [
+  "task.completed",
+  "task.failed",
+  "task.needs_attention",
+  "task.pr_opened",
+  "review.completed",
+]);
+
+export const webhooks = pgTable("webhooks", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  url: text("url").notNull(),
+  events: jsonb("events").$type<string[]>().notNull(), // array of webhook_event values
+  secret: text("secret"), // HMAC-SHA256 signing secret (plaintext; only used for outbound signing)
+  description: text("description"),
+  active: boolean("active").notNull().default(true),
+  createdBy: uuid("created_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const webhookDeliveries = pgTable("webhook_deliveries", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  webhookId: uuid("webhook_id")
+    .notNull()
+    .references(() => webhooks.id, { onDelete: "cascade" }),
+  event: text("event").notNull(),
+  payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+  statusCode: integer("status_code"),
+  responseBody: text("response_body"),
+  success: boolean("success").notNull().default(false),
+  attempt: integer("attempt").notNull().default(1),
+  error: text("error"),
+  deliveredAt: timestamp("delivered_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const promptTemplates = pgTable("prompt_templates", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull().unique(),

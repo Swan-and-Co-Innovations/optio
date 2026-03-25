@@ -4,6 +4,8 @@ import { tasks, taskEvents, taskLogs } from "../db/schema.js";
 import { TaskState, transition, normalizeRepoUrl, type CreateTaskInput } from "@optio/shared";
 import { publishEvent } from "./event-bus.js";
 import { logger } from "../logger.js";
+import { enqueueWebhookEvent } from "../workers/webhook-worker.js";
+import type { WebhookEvent } from "./webhook-service.js";
 
 /**
  * Thrown when a state transition fails because another worker changed the
@@ -143,6 +145,28 @@ export async function transitionTask(
     closeGitHubIssue(task.repoUrl, task.ticketExternalId, task.prUrl).catch((err) =>
       logger.warn({ err, taskId: id }, "Failed to close linked GitHub issue"),
     );
+  }
+
+  // Dispatch webhook notifications for relevant state changes
+  const webhookEventMap: Partial<Record<TaskState, WebhookEvent>> = {
+    [TaskState.COMPLETED]: task.taskType === "review" ? "review.completed" : "task.completed",
+    [TaskState.FAILED]: "task.failed",
+    [TaskState.NEEDS_ATTENTION]: "task.needs_attention",
+    [TaskState.PR_OPENED]: "task.pr_opened",
+  };
+  const webhookEvent = webhookEventMap[toState];
+  if (webhookEvent) {
+    enqueueWebhookEvent(webhookEvent, {
+      taskId: id,
+      taskTitle: task.title,
+      repoUrl: task.repoUrl,
+      repoBranch: task.repoBranch,
+      fromState: currentState,
+      toState,
+      prUrl: updated[0].prUrl ?? undefined,
+      errorMessage: updated[0].errorMessage ?? undefined,
+      taskType: task.taskType,
+    }).catch((err) => logger.warn({ err, taskId: id }, "Failed to enqueue webhook event"));
   }
 
   return updated[0];
