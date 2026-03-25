@@ -37,6 +37,7 @@ import {
   transitionTask,
   tryTransitionTask,
   updateTaskPr,
+  searchTasks,
 } from "./task-service.js";
 
 describe("StateRaceError", () => {
@@ -169,5 +170,73 @@ describe("updateTaskPr", () => {
     expect(db.update(undefined as any).set).toHaveBeenCalledWith(
       expect.objectContaining({ prUrl: "https://github.com/o/r" }),
     );
+  });
+});
+
+describe("searchTasks", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("returns tasks with cursor when more results exist", async () => {
+    const now = new Date();
+    // Create limit+1 tasks to trigger hasMore
+    const mockTasks = Array.from({ length: 3 }, (_, i) => ({
+      id: `task-${i}`,
+      title: `Task ${i}`,
+      state: "running",
+      createdAt: new Date(now.getTime() - i * 1000),
+    }));
+    const mockDb = db as any;
+    // No filters, so chain is: select().from().orderBy().limit() → await resolves via limit
+    mockDb.limit.mockResolvedValueOnce(mockTasks);
+
+    const result = await searchTasks({ limit: 2 });
+    // 3 results returned for limit=2 means hasMore=true, items trimmed to 2
+    expect(result.hasMore).toBe(true);
+    expect(result.tasks).toHaveLength(2);
+    expect(result.nextCursor).toBeTruthy();
+  });
+
+  it("returns no cursor when all results fit", async () => {
+    const mockDb = db as any;
+    mockDb.limit.mockResolvedValueOnce([
+      { id: "t1", title: "Task", state: "running", createdAt: new Date() },
+    ]);
+
+    const result = await searchTasks({ limit: 50 });
+    expect(result.hasMore).toBe(false);
+    expect(result.tasks).toHaveLength(1);
+    expect(result.nextCursor).toBeNull();
+  });
+
+  it("accepts empty params and returns results", async () => {
+    const mockDb = db as any;
+    mockDb.limit.mockResolvedValueOnce([]);
+
+    const result = await searchTasks({});
+    expect(result.hasMore).toBe(false);
+    expect(result.tasks).toHaveLength(0);
+    expect(result.nextCursor).toBeNull();
+  });
+
+  it("applies filters when params are provided", async () => {
+    const mockDb = db as any;
+    // With filters, chain ends with .where() — mock that to resolve
+    mockDb.where.mockResolvedValueOnce([
+      { id: "t1", title: "Fix bug", state: "completed", createdAt: new Date() },
+    ]);
+
+    const result = await searchTasks({ q: "Fix", state: "completed" });
+    expect(result.tasks).toHaveLength(1);
+    expect(result.hasMore).toBe(false);
+    expect(result.nextCursor).toBeNull();
+  });
+
+  it("defaults limit to 50", async () => {
+    const mockDb = db as any;
+    mockDb.limit.mockResolvedValueOnce([]);
+
+    await searchTasks({});
+    // limit(51) = default 50 + 1
+    expect(mockDb.limit).toHaveBeenCalledWith(51);
   });
 });

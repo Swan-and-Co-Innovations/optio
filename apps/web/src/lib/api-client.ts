@@ -29,6 +29,32 @@ export const api = {
     return request<{ tasks: any[] }>(`/api/tasks${query ? `?${query}` : ""}`);
   },
 
+  searchTasks: (params?: {
+    q?: string;
+    state?: string;
+    repoUrl?: string;
+    agentType?: string;
+    taskType?: string;
+    costMin?: string;
+    costMax?: string;
+    createdAfter?: string;
+    createdBefore?: string;
+    author?: string;
+    cursor?: string;
+    limit?: number;
+  }) => {
+    const qs = new URLSearchParams();
+    if (params) {
+      for (const [key, val] of Object.entries(params)) {
+        if (val != null && val !== "") qs.set(key, String(val));
+      }
+    }
+    const query = qs.toString();
+    return request<{ tasks: any[]; nextCursor: string | null; hasMore: boolean }>(
+      `/api/tasks/search${query ? `?${query}` : ""}`,
+    );
+  },
+
   getTask: (id: string) => request<{ task: any }>(`/api/tasks/${id}`),
 
   createTask: (data: {
