@@ -85,6 +85,7 @@ export const taskEvents = pgTable(
     toState: taskStateEnum("to_state").notNull(),
     trigger: text("trigger").notNull(),
     message: text("message"),
+    userId: uuid("user_id").references(() => users.id),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index("task_events_task_id_idx").on(table.taskId)],
@@ -301,6 +302,21 @@ export const scheduleRuns = pgTable(
     triggeredAt: timestamp("triggered_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index("schedule_runs_schedule_id_idx").on(table.scheduleId)],
+);
+
+export const taskComments = pgTable(
+  "task_comments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    taskId: uuid("task_id")
+      .notNull()
+      .references(() => tasks.id),
+    userId: uuid("user_id").references(() => users.id),
+    content: text("content").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("task_comments_task_id_idx").on(table.taskId)],
 );
 
 export const promptTemplates = pgTable("prompt_templates", {

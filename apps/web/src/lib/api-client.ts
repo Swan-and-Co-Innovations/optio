@@ -103,6 +103,26 @@ export const api = {
 
   getTaskEvents: (id: string) => request<{ events: any[] }>(`/api/tasks/${id}/events`),
 
+  // Comments & Activity
+  getTaskComments: (id: string) => request<{ comments: any[] }>(`/api/tasks/${id}/comments`),
+
+  addTaskComment: (id: string, content: string) =>
+    request<{ comment: any }>(`/api/tasks/${id}/comments`, {
+      method: "POST",
+      body: JSON.stringify({ content }),
+    }),
+
+  updateTaskComment: (taskId: string, commentId: string, content: string) =>
+    request<{ comment: any }>(`/api/tasks/${taskId}/comments/${commentId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ content }),
+    }),
+
+  deleteTaskComment: (taskId: string, commentId: string) =>
+    request<void>(`/api/tasks/${taskId}/comments/${commentId}`, { method: "DELETE" }),
+
+  getTaskActivity: (id: string) => request<{ activity: any[] }>(`/api/tasks/${id}/activity`),
+
   // Secrets
   listSecrets: (scope?: string) => {
     const qs = scope ? `?scope=${scope}` : "";

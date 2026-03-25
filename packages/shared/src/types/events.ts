@@ -1,6 +1,11 @@
 import type { TaskState } from "./task.js";
 
-export type WsEvent = TaskStateChangedEvent | TaskLogEvent | TaskCreatedEvent | AuthFailedEvent;
+export type WsEvent =
+  | TaskStateChangedEvent
+  | TaskLogEvent
+  | TaskCreatedEvent
+  | AuthFailedEvent
+  | TaskCommentEvent;
 
 export interface TaskStateChangedEvent {
   type: "task:state_changed";
@@ -28,5 +33,12 @@ export interface TaskCreatedEvent {
 export interface AuthFailedEvent {
   type: "auth:failed";
   message: string;
+  timestamp: string;
+}
+
+export interface TaskCommentEvent {
+  type: "task:comment";
+  taskId: string;
+  commentId: string;
   timestamp: string;
 }

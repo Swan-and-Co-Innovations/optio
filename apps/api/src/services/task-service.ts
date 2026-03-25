@@ -1,6 +1,6 @@
 import { eq, desc, and, or, ilike, gte, lte, sql } from "drizzle-orm";
 import { db } from "../db/client.js";
-import { tasks, taskEvents, taskLogs } from "../db/schema.js";
+import { tasks, taskEvents, taskLogs, users } from "../db/schema.js";
 import { TaskState, transition, normalizeRepoUrl, type CreateTaskInput } from "@optio/shared";
 import { publishEvent } from "./event-bus.js";
 import { logger } from "../logger.js";
@@ -172,6 +172,7 @@ export async function transitionTask(
   toState: TaskState,
   trigger: string,
   message?: string,
+  userId?: string,
 ) {
   const task = await getTask(id);
   if (!task) throw new Error(`Task not found: ${id}`);
@@ -227,6 +228,7 @@ export async function transitionTask(
     toState,
     trigger,
     message,
+    userId,
   });
 
   await publishEvent({
@@ -315,9 +317,10 @@ export async function tryTransitionTask(
   toState: TaskState,
   trigger: string,
   message?: string,
+  userId?: string,
 ) {
   try {
-    return await transitionTask(id, toState, trigger, message);
+    return await transitionTask(id, toState, trigger, message, userId);
   } catch (err) {
     if (err instanceof StateRaceError) {
       return null;
@@ -439,9 +442,35 @@ export async function forceRedoTask(id: string) {
 }
 
 export async function getTaskEvents(taskId: string) {
-  return db
-    .select()
+  const rows = await db
+    .select({
+      id: taskEvents.id,
+      taskId: taskEvents.taskId,
+      fromState: taskEvents.fromState,
+      toState: taskEvents.toState,
+      trigger: taskEvents.trigger,
+      message: taskEvents.message,
+      userId: taskEvents.userId,
+      createdAt: taskEvents.createdAt,
+      userName: users.displayName,
+      userAvatar: users.avatarUrl,
+    })
     .from(taskEvents)
+    .leftJoin(users, eq(taskEvents.userId, users.id))
     .where(eq(taskEvents.taskId, taskId))
     .orderBy(taskEvents.createdAt);
+
+  return rows.map((row) => ({
+    id: row.id,
+    taskId: row.taskId,
+    fromState: row.fromState,
+    toState: row.toState,
+    trigger: row.trigger,
+    message: row.message,
+    userId: row.userId,
+    createdAt: row.createdAt,
+    user: row.userId
+      ? { id: row.userId, displayName: row.userName!, avatarUrl: row.userAvatar }
+      : undefined,
+  }));
 }

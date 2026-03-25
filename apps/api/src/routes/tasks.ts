@@ -64,7 +64,13 @@ export async function taskRoutes(app: FastifyInstance) {
     const task = await taskService.createTask(input);
 
     // Enqueue for processing
-    await taskService.transitionTask(task.id, TaskState.QUEUED, "task_submitted");
+    await taskService.transitionTask(
+      task.id,
+      TaskState.QUEUED,
+      "task_submitted",
+      undefined,
+      req.user?.id,
+    );
     await taskQueue.add(
       "process-task",
       { taskId: task.id },
@@ -82,14 +88,26 @@ export async function taskRoutes(app: FastifyInstance) {
   // Cancel task
   app.post("/api/tasks/:id/cancel", async (req, reply) => {
     const { id } = req.params as { id: string };
-    const task = await taskService.transitionTask(id, TaskState.CANCELLED, "user_cancel");
+    const task = await taskService.transitionTask(
+      id,
+      TaskState.CANCELLED,
+      "user_cancel",
+      undefined,
+      req.user?.id,
+    );
     reply.send({ task });
   });
 
   // Retry task
   app.post("/api/tasks/:id/retry", async (req, reply) => {
     const { id } = req.params as { id: string };
-    const task = await taskService.transitionTask(id, TaskState.QUEUED, "user_retry");
+    const task = await taskService.transitionTask(
+      id,
+      TaskState.QUEUED,
+      "user_retry",
+      undefined,
+      req.user?.id,
+    );
     await taskQueue.add(
       "process-task",
       { taskId: id },

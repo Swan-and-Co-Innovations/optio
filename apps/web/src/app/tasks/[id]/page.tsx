@@ -6,6 +6,7 @@ import { usePageTitle } from "@/hooks/use-page-title";
 import { useTask } from "@/hooks/use-task";
 import { LogViewer } from "@/components/log-viewer";
 import { PipelineTimeline } from "@/components/pipeline-timeline";
+import { ActivityFeed } from "@/components/activity-feed";
 import { StateBadge } from "@/components/state-badge";
 import { api } from "@/lib/api-client";
 import { classifyError } from "@optio/shared";
@@ -33,6 +34,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
   const [actionLoading, setActionLoading] = useState(false);
   const [resumePrompt, setResumePrompt] = useState("");
   const [showTimeline, setShowTimeline] = useState(true);
+  const [sidebarTab, setSidebarTab] = useState<"pipeline" | "activity">("pipeline");
   const [subtasks, setSubtasks] = useState<any[]>([]);
   const [showCreateSubtask, setShowCreateSubtask] = useState(false);
   const [newSubtask, setNewSubtask] = useState({
@@ -586,9 +588,38 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
 
         {/* Timeline sidebar */}
         {showTimeline && (
-          <div className="w-72 shrink-0 border-l border-border overflow-auto p-3 bg-bg-card">
-            <h3 className="text-xs font-medium text-text-muted mb-3">Pipeline</h3>
-            <PipelineTimeline task={task} events={events} subtasks={subtasks} />
+          <div className="w-80 shrink-0 border-l border-border overflow-auto bg-bg-card flex flex-col">
+            <div className="flex items-center gap-1 p-2 border-b border-border">
+              <button
+                onClick={() => setSidebarTab("pipeline")}
+                className={cn(
+                  "px-2.5 py-1 rounded text-xs transition-colors",
+                  sidebarTab === "pipeline"
+                    ? "bg-primary/10 text-primary font-medium"
+                    : "text-text-muted hover:bg-bg-hover",
+                )}
+              >
+                Pipeline
+              </button>
+              <button
+                onClick={() => setSidebarTab("activity")}
+                className={cn(
+                  "px-2.5 py-1 rounded text-xs transition-colors",
+                  sidebarTab === "activity"
+                    ? "bg-primary/10 text-primary font-medium"
+                    : "text-text-muted hover:bg-bg-hover",
+                )}
+              >
+                Activity
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto p-3">
+              {sidebarTab === "pipeline" ? (
+                <PipelineTimeline task={task} events={events} subtasks={subtasks} />
+              ) : (
+                <ActivityFeed taskId={id} />
+              )}
+            </div>
           </div>
         )}
       </div>
