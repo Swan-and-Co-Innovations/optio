@@ -426,6 +426,7 @@ kubectl delete namespace optio
 - **State transitions**: always go through `taskService.transitionTask()` which validates, updates DB, records event, and publishes to WebSocket
 - **Secrets**: never log or return secret values, only names/scopes. Encrypted at rest with AES-256-GCM
 - **Cost tracking**: stored as string (`costUsd`) to avoid float precision issues
+- **Repo URL normalization**: always call `normalizeRepoUrl()` from `@optio/shared` before storing or comparing repo URLs — ensures consistent matching regardless of input format (HTTPS, SSH, `.git` suffix, etc.)
 
 ## API Routes
 
