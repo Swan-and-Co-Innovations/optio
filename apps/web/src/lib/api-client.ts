@@ -93,12 +93,27 @@ export const api = {
       body: JSON.stringify(prompt ? { prompt } : {}),
     }),
 
-  getTaskLogs: (id: string, params?: { limit?: number; offset?: number }) => {
+  getTaskLogs: (
+    id: string,
+    params?: { limit?: number; offset?: number; search?: string; logType?: string },
+  ) => {
     const qs = new URLSearchParams();
     if (params?.limit) qs.set("limit", String(params.limit));
     if (params?.offset) qs.set("offset", String(params.offset));
+    if (params?.search) qs.set("search", params.search);
+    if (params?.logType) qs.set("logType", params.logType);
     const query = qs.toString();
     return request<{ logs: any[] }>(`/api/tasks/${id}/logs${query ? `?${query}` : ""}`);
+  },
+
+  exportTaskLogs: (id: string, params?: { format?: string; search?: string; logType?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.format) qs.set("format", params.format);
+    if (params?.search) qs.set("search", params.search);
+    if (params?.logType) qs.set("logType", params.logType);
+    const query = qs.toString();
+    const url = `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000"}/api/tasks/${id}/logs/export${query ? `?${query}` : ""}`;
+    return url;
   },
 
   getTaskEvents: (id: string) => request<{ events: any[] }>(`/api/tasks/${id}/events`),
