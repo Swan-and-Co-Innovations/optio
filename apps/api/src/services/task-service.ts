@@ -1,4 +1,4 @@
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc, and, or, ilike, gte, lte, sql } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { tasks, taskEvents, taskLogs } from "../db/schema.js";
 import { TaskState, transition, normalizeRepoUrl, type CreateTaskInput } from "@optio/shared";
@@ -68,6 +68,103 @@ export async function listTasks(opts?: { state?: string; limit?: number; offset?
     query = query.offset(opts.offset) as typeof query;
   }
   return query;
+}
+
+export interface SearchTasksOpts {
+  q?: string;
+  state?: string;
+  repoUrl?: string;
+  agentType?: string;
+  taskType?: string;
+  costMin?: string;
+  costMax?: string;
+  createdAfter?: string;
+  createdBefore?: string;
+  author?: string;
+  cursor?: string;
+  limit?: number;
+}
+
+export async function searchTasks(opts: SearchTasksOpts) {
+  const limit = opts.limit ?? 50;
+  const conditions = [];
+
+  // Full-text search on title and prompt
+  if (opts.q) {
+    const pattern = `%${opts.q}%`;
+    conditions.push(or(ilike(tasks.title, pattern), ilike(tasks.prompt, pattern))!);
+  }
+
+  // Exact field filters
+  if (opts.state) {
+    conditions.push(eq(tasks.state, opts.state as any));
+  }
+  if (opts.repoUrl) {
+    conditions.push(eq(tasks.repoUrl, normalizeRepoUrl(opts.repoUrl)));
+  }
+  if (opts.agentType) {
+    conditions.push(eq(tasks.agentType, opts.agentType));
+  }
+  if (opts.taskType) {
+    conditions.push(eq(tasks.taskType, opts.taskType));
+  }
+  if (opts.author) {
+    conditions.push(eq(tasks.createdBy, opts.author));
+  }
+
+  // Cost range (costUsd is stored as text, cast to numeric for comparison)
+  if (opts.costMin) {
+    conditions.push(sql`CAST(${tasks.costUsd} AS numeric) >= ${Number(opts.costMin)}`);
+  }
+  if (opts.costMax) {
+    conditions.push(sql`CAST(${tasks.costUsd} AS numeric) <= ${Number(opts.costMax)}`);
+  }
+
+  // Date range
+  if (opts.createdAfter) {
+    conditions.push(gte(tasks.createdAt, new Date(opts.createdAfter)));
+  }
+  if (opts.createdBefore) {
+    conditions.push(lte(tasks.createdAt, new Date(opts.createdBefore)));
+  }
+
+  // Cursor-based pagination: cursor is base64 of "createdAt|id"
+  if (opts.cursor) {
+    const decoded = Buffer.from(opts.cursor, "base64").toString();
+    const sepIdx = decoded.indexOf("|");
+    if (sepIdx !== -1) {
+      const cursorDate = decoded.slice(0, sepIdx);
+      const cursorId = decoded.slice(sepIdx + 1);
+      conditions.push(
+        or(
+          sql`${tasks.createdAt} < ${new Date(cursorDate)}`,
+          and(eq(tasks.createdAt, new Date(cursorDate) as any), sql`${tasks.id} < ${cursorId}`),
+        )!,
+      );
+    }
+  }
+
+  let query = db
+    .select()
+    .from(tasks)
+    .orderBy(desc(tasks.createdAt), desc(tasks.id))
+    .limit(limit + 1);
+
+  if (conditions.length > 0) {
+    query = query.where(and(...conditions)) as typeof query;
+  }
+
+  const results = await query;
+  const hasMore = results.length > limit;
+  const items = hasMore ? results.slice(0, limit) : results;
+
+  let nextCursor: string | null = null;
+  if (hasMore && items.length > 0) {
+    const last = items[items.length - 1];
+    nextCursor = Buffer.from(`${last.createdAt.toISOString()}|${last.id}`).toString("base64");
+  }
+
+  return { tasks: items, nextCursor, hasMore };
 }
 
 export async function transitionTask(

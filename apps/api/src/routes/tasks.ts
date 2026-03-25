@@ -30,6 +30,26 @@ export async function taskRoutes(app: FastifyInstance) {
     reply.send({ tasks: taskList, limit, offset });
   });
 
+  // Search tasks with advanced filtering and cursor-based pagination
+  app.get("/api/tasks/search", async (req, reply) => {
+    const query = req.query as Record<string, string | undefined>;
+    const result = await taskService.searchTasks({
+      q: query.q,
+      state: query.state,
+      repoUrl: query.repoUrl,
+      agentType: query.agentType,
+      taskType: query.taskType,
+      costMin: query.costMin,
+      costMax: query.costMax,
+      createdAfter: query.createdAfter,
+      createdBefore: query.createdBefore,
+      author: query.author,
+      cursor: query.cursor,
+      limit: query.limit ? parseInt(query.limit, 10) : undefined,
+    });
+    reply.send(result);
+  });
+
   // Get task
   app.get("/api/tasks/:id", async (req, reply) => {
     const { id } = req.params as { id: string };
