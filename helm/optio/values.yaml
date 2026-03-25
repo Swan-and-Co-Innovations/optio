@@ -50,10 +50,10 @@ web:
 # Agent containers
 agent:
   image:
-    repository: optio-agent
+    repository: ghcr.io/jonwiggins/optio-agent-node
     tag: latest
-    pullPolicy: Never  # Use "IfNotPresent" or "Always" for registry images
-  imagePullPolicy: Never
+    pullPolicy: IfNotPresent  # Use "Never" for local images
+  imagePullPolicy: IfNotPresent  # Use "Never" for local images
   # PVC template for repo pod home directories.
   # These PVCs are created dynamically by the API server (one per repo pod
   # instance), but this template controls the storage class and default size.

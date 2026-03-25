@@ -1,4 +1,5 @@
-FROM optio-base:latest
+ARG BASE_IMAGE=optio-base:latest
+FROM ${BASE_IMAGE}
 
 USER root
 

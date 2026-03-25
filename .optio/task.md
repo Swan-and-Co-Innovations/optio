@@ -1,45 +1,32 @@
-# feat: Scheduled and recurring tasks
+# feat: CI pipeline to build and push agent images to container registry
 
-feat: Scheduled and recurring tasks
+feat: CI pipeline to build and push agent images to container registry
 
 ## Problem
 
-No way to run tasks on a schedule (nightly tests, weekly refactors, periodic dependency updates).
+Agent images must be built locally with `docker build`. Deploying via Helm to a remote cluster fails because pods can't pull the image — there's no registry.
 
 ## Solution
 
-### API
+Add a GitHub Actions workflow that:
 
-- `POST /api/schedules` — create schedule (name, cron expression, task template or inline config)
-- `GET /api/schedules` — list schedules
-- `PATCH /api/schedules/:id` — update (enable/disable, change cron)
-- `DELETE /api/schedules/:id`
-- `POST /api/schedules/:id/trigger` — manually trigger a scheduled run
+1. Builds all image presets (base, node, python, go, rust, full) on push to `main` and on tags
+2. Pushes to `ghcr.io/jonwiggins/optio-agent-{preset}:{version}`
+3. Tags with `latest` + git SHA + semver tag (if applicable)
 
-### Implementation
+Update Helm chart defaults:
 
-- New BullMQ repeating job that checks schedules every minute
-- On cron match, creates a task from the schedule's template
-- Track last run time, next run time, run history
-
-### Web UI
-
-- Schedule management page (create, edit, enable/disable, view history)
-- Cron expression builder with human-readable preview
-- Schedule indicator on task cards ("triggered by: nightly-tests")
-
-### Database
-
-- New `schedules` table (id, name, cron, taskConfig JSON, enabled, lastRunAt, nextRunAt, createdAt)
+- Change default image refs to `ghcr.io/jonwiggins/optio-agent-node:latest`
+- Change default `imagePullPolicy` to `IfNotPresent`
+- Local dev keeps `imagePullPolicy: Never` via `.env`
 
 ## Acceptance Criteria
 
-- [ ] CRUD for schedules with cron expressions
-- [ ] Automatic task creation on schedule
-- [ ] Manual trigger support
-- [ ] Web UI for schedule management
-- [ ] Run history tracking
+- [ ] GitHub Actions workflow builds and pushes all image presets
+- [ ] Images tagged with `latest` and git SHA
+- [ ] Helm chart references registry images by default
+- [ ] Local dev still uses local builds
 
 ---
 
-_Optio Task ID: 54ddc6e6-2e2a-4361-80fe-6030ed625c23_
+*Optio Task ID: 8fd19594-a893-40d5-83c3-ddd95e3033ee*
