@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import { api } from "@/lib/api-client";
 import { TaskCard } from "@/components/task-card";
 import Link from "next/link";
@@ -25,6 +25,14 @@ import {
   BarChart3,
   Gauge,
   Clock,
+  Zap,
+  FolderGit2,
+  ListTodo,
+  ArrowRight,
+  Rocket,
+  KeyRound,
+  GitBranch,
+  Bot,
 } from "lucide-react";
 import { StateBadge } from "@/components/state-badge";
 
@@ -47,7 +55,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 function formatK8sResource(value: string | undefined): string {
-  if (!value) return "—";
+  if (!value) return "\u2014";
   const kiMatch = value.match(/^(\d+)Ki$/);
   if (kiMatch) {
     const ki = parseInt(kiMatch[1], 10);
@@ -83,6 +91,7 @@ interface TaskStats {
 export default function OverviewPage() {
   const [taskStats, setTaskStats] = useState<TaskStats | null>(null);
   const [recentTasks, setRecentTasks] = useState<any[]>([]);
+  const [repoCount, setRepoCount] = useState<number | null>(null);
   const [cluster, setCluster] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [dismissedEvents, setDismissedEvents] = useState<Set<number>>(new Set());
@@ -101,8 +110,12 @@ export default function OverviewPage() {
   const MAX_HISTORY = 60; // 10 minutes at 10s intervals
 
   const refresh = () => {
-    Promise.all([api.listTasks({ limit: 100 }), api.getClusterOverview().catch(() => null)])
-      .then(([tasksRes, clusterRes]) => {
+    Promise.all([
+      api.listTasks({ limit: 100 }),
+      api.getClusterOverview().catch(() => null),
+      api.listRepos().catch(() => ({ repos: [] })),
+    ])
+      .then(([tasksRes, clusterRes, reposRes]) => {
         const tasks = tasksRes.tasks;
         setTaskStats({
           total: tasks.length,
@@ -113,6 +126,7 @@ export default function OverviewPage() {
           failed: tasks.filter((t: any) => t.state === "failed").length,
         });
         setRecentTasks(tasks.slice(0, 5));
+        setRepoCount(reposRes.repos.length);
         if (clusterRes) {
           setCluster(clusterRes);
           const node = clusterRes.nodes?.[0];
@@ -151,7 +165,6 @@ export default function OverviewPage() {
     refresh();
     refreshUsage();
     const interval = setInterval(refresh, 10000);
-    // Usage endpoint is rate-limited — poll every 5 minutes
     const usageInterval = setInterval(refreshUsage, 5 * 60 * 1000);
     return () => {
       clearInterval(interval);
@@ -167,6 +180,12 @@ export default function OverviewPage() {
     );
   }
 
+  const isFirstRun = (taskStats?.total ?? 0) === 0;
+
+  if (isFirstRun) {
+    return <WelcomeHero repoCount={repoCount ?? 0} />;
+  }
+
   const totalCost = recentTasks.reduce((sum: number, t: any) => {
     return sum + (t.costUsd ? parseFloat(t.costUsd) : 0);
   }, 0);
@@ -174,7 +193,6 @@ export default function OverviewPage() {
   const {
     nodes,
     pods,
-    services,
     events,
     summary,
     repoPods: repoPodRecords,
@@ -194,7 +212,6 @@ export default function OverviewPage() {
     repoPods: [],
   };
 
-  // Build a lookup from pod name → repoPod record (for task indicators)
   const repoPodByName = new Map<string, any>(
     (repoPodRecords ?? []).map((rp: any) => [rp.podName, rp]),
   );
@@ -202,7 +219,19 @@ export default function OverviewPage() {
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">Overview</h1>
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Overview</h1>
+          <p className="text-sm text-text-muted mt-0.5">
+            {taskStats?.running ?? 0} active {(taskStats?.running ?? 0) === 1 ? "task" : "tasks"}
+            {(taskStats?.needsAttention ?? 0) > 0 && (
+              <span className="text-warning">
+                {" \u00B7 "}
+                {taskStats?.needsAttention} need
+                {(taskStats?.needsAttention ?? 0) === 1 ? "s" : ""} attention
+              </span>
+            )}
+          </p>
+        </div>
         <button
           onClick={refresh}
           className="p-2 rounded-lg hover:bg-bg-hover text-text-muted transition-colors"
@@ -211,17 +240,16 @@ export default function OverviewPage() {
         </button>
       </div>
 
-      {/* Top stats row: tasks + cluster combined */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard
           icon={Activity}
-          label="Running Tasks"
+          label="Running"
           value={taskStats?.running ?? 0}
           color="text-primary"
         />
         <StatCard
           icon={AlertTriangle}
-          label="Needs Attention"
+          label="Attention"
           value={taskStats?.needsAttention ?? 0}
           color="text-warning"
         />
@@ -233,13 +261,12 @@ export default function OverviewPage() {
         />
         <StatCard
           icon={CheckCircle}
-          label="Done"
+          label="Completed"
           value={taskStats?.completed ?? 0}
           color="text-success"
         />
       </div>
 
-      {/* Claude Max usage */}
       {usage?.available && (
         <div className="rounded-xl border border-border/50 bg-bg-card p-4">
           <div className="flex items-center gap-2 mb-3">
@@ -279,7 +306,6 @@ export default function OverviewPage() {
         </div>
       )}
 
-      {/* Cluster health bar */}
       <div className="rounded-xl border border-border/50 bg-bg-card overflow-hidden">
         <div className="flex items-center justify-between p-4">
           <div className="flex items-center gap-4 text-xs">
@@ -364,7 +390,6 @@ export default function OverviewPage() {
           )}
         </div>
 
-        {/* Expandable metrics charts */}
         {showMetrics && (
           <div className="border-t border-border/30 px-4 py-4">
             {metricsHistory.length > 1 ? (
@@ -404,9 +429,7 @@ export default function OverviewPage() {
         )}
       </div>
 
-      {/* Two-column: Recent tasks + Pods */}
       <div className="grid md:grid-cols-2 gap-8">
-        {/* Recent tasks */}
         <div className="min-w-0 overflow-hidden">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-medium text-text-heading">Recent Tasks</h2>
@@ -418,17 +441,17 @@ export default function OverviewPage() {
                 <Plus className="w-3 h-3" /> New
               </Link>
               <Link href="/tasks" className="text-xs text-primary hover:underline">
-                All →
+                All &rarr;
               </Link>
             </div>
           </div>
           {recentTasks.length === 0 ? (
-            <div className="text-center py-8 text-text-muted border border-dashed border-border rounded-lg text-sm">
-              No tasks yet.{" "}
-              <Link href="/tasks/new" className="text-primary hover:underline">
-                Create one →
-              </Link>
-            </div>
+            <EmptyState
+              icon={ListTodo}
+              title="No tasks yet"
+              description="Create your first task to get an AI agent working on your code."
+              action={{ label: "Create a task", href: "/tasks/new" }}
+            />
           ) : (
             <div className="grid gap-2">
               {recentTasks.map((task: any) => (
@@ -438,15 +461,16 @@ export default function OverviewPage() {
           )}
         </div>
 
-        {/* Pods */}
         <div className="min-w-0 overflow-hidden">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-medium text-text-heading">Pods</h2>
           </div>
           {pods.length === 0 ? (
-            <div className="text-center py-8 text-text-muted border border-dashed border-border rounded-lg text-sm">
-              No pods running
-            </div>
+            <EmptyState
+              icon={Container}
+              title="No pods running"
+              description="Pods are created automatically when tasks start. They stay warm for fast iteration."
+            />
           ) : (
             <div className="space-y-1.5">
               {pods.map((pod: any) => {
@@ -533,7 +557,6 @@ export default function OverviewPage() {
                       </div>
                     </button>
 
-                    {/* Expanded: show tasks */}
                     {isExpanded && (
                       <div className="border-t border-border px-2.5 py-2 space-y-1">
                         {podTasks.length > 0 ? (
@@ -558,7 +581,6 @@ export default function OverviewPage() {
             </div>
           )}
 
-          {/* Recent events */}
           {events.filter((_: any, i: number) => !dismissedEvents.has(i)).length > 0 && (
             <div className="mt-4">
               <div className="flex items-center justify-between mb-2">
@@ -620,6 +642,218 @@ export default function OverviewPage() {
     </div>
   );
 }
+
+/* --- Welcome Hero --- */
+
+function WelcomeHero({ repoCount }: { repoCount: number }) {
+  const hasRepos = repoCount > 0;
+
+  const steps = [
+    {
+      num: 1,
+      icon: KeyRound,
+      title: "Configure secrets",
+      description: "Add your Anthropic API key or connect Claude Max credentials.",
+      href: "/secrets",
+      done: false,
+    },
+    {
+      num: 2,
+      icon: FolderGit2,
+      title: "Add a repository",
+      description: "Connect a GitHub repo so Optio can clone it and run agents.",
+      href: "/repos/new",
+      done: hasRepos,
+    },
+    {
+      num: 3,
+      icon: Rocket,
+      title: "Create your first task",
+      description: "Describe what you want built. Optio spins up an agent and opens a PR.",
+      href: "/tasks/new",
+      done: false,
+    },
+  ];
+
+  return (
+    <div className="p-6 max-w-4xl mx-auto">
+      <div className="relative overflow-hidden rounded-2xl border border-border/50 bg-gradient-to-br from-bg-card via-bg-card to-primary/[0.04] px-8 py-12 mb-8">
+        <div className="absolute top-0 right-0 w-72 h-72 bg-primary/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3" />
+        <div className="absolute bottom-0 left-0 w-48 h-48 bg-primary/3 rounded-full blur-3xl translate-y-1/2 -translate-x-1/4" />
+
+        <div className="relative">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2.5 rounded-xl bg-primary/10 border border-primary/20">
+              <Zap className="w-6 h-6 text-primary" />
+            </div>
+            <h1 className="text-3xl font-bold tracking-tight">Welcome to Optio</h1>
+          </div>
+          <p className="text-text-muted text-lg max-w-xl leading-relaxed mb-2">
+            CI/CD where the build step is an AI agent. Submit tasks from the dashboard or GitHub
+            Issues, and Optio handles the rest &mdash; isolated pods, code generation, and pull
+            requests.
+          </p>
+
+          <div className="flex items-center gap-4 mt-6 text-sm text-text-muted">
+            <span className="flex items-center gap-1.5">
+              <Bot className="w-4 h-4 text-primary" />
+              AI-powered coding
+            </span>
+            <span className="flex items-center gap-1.5">
+              <GitBranch className="w-4 h-4 text-primary" />
+              Auto PR creation
+            </span>
+            <span className="flex items-center gap-1.5">
+              <Container className="w-4 h-4 text-primary" />
+              Isolated K8s pods
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div className="mb-8">
+        <h2 className="text-sm font-medium text-text-heading uppercase tracking-wider mb-4">
+          Get started
+        </h2>
+        <div className="grid gap-3">
+          {steps.map((step) => (
+            <Link
+              key={step.num}
+              href={step.href}
+              className={cn(
+                "group flex items-center gap-4 p-4 rounded-xl border transition-all",
+                step.done
+                  ? "border-success/20 bg-success/[0.03]"
+                  : "border-border/50 bg-bg-card hover:border-primary/30 hover:bg-bg-card-hover",
+              )}
+            >
+              <div
+                className={cn(
+                  "flex items-center justify-center w-10 h-10 rounded-lg shrink-0",
+                  step.done
+                    ? "bg-success/10 text-success"
+                    : "bg-bg-hover text-text-muted group-hover:bg-primary/10 group-hover:text-primary",
+                )}
+              >
+                {step.done ? (
+                  <CheckCircle className="w-5 h-5" />
+                ) : (
+                  <step.icon className="w-5 h-5" />
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span
+                    className={cn(
+                      "text-sm font-medium",
+                      step.done ? "text-success" : "text-text-heading",
+                    )}
+                  >
+                    {step.title}
+                  </span>
+                  {step.done && (
+                    <span className="text-[10px] font-medium text-success bg-success/10 px-1.5 py-0.5 rounded">
+                      Done
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-text-muted mt-0.5">{step.description}</p>
+              </div>
+              <ArrowRight
+                className={cn(
+                  "w-4 h-4 shrink-0 transition-transform",
+                  step.done
+                    ? "text-success/40"
+                    : "text-text-muted/30 group-hover:text-primary group-hover:translate-x-0.5",
+                )}
+              />
+            </Link>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <QuickLink icon={ListTodo} label="Tasks" description="View all tasks" href="/tasks" />
+        <QuickLink
+          icon={FolderGit2}
+          label="Repos"
+          description="Manage repositories"
+          href="/repos"
+        />
+        <QuickLink
+          icon={Container}
+          label="Cluster"
+          description="K8s pods & nodes"
+          href="/cluster"
+        />
+        <QuickLink
+          icon={KeyRound}
+          label="Secrets"
+          description="API keys & tokens"
+          href="/secrets"
+        />
+      </div>
+    </div>
+  );
+}
+
+function QuickLink({
+  icon: Icon,
+  label,
+  description,
+  href,
+}: {
+  icon: any;
+  label: string;
+  description: string;
+  href: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className="group p-4 rounded-xl border border-border/50 bg-bg-card hover:border-primary/30 hover:bg-bg-card-hover transition-all"
+    >
+      <Icon className="w-5 h-5 text-text-muted group-hover:text-primary transition-colors mb-2" />
+      <div className="text-sm font-medium text-text-heading">{label}</div>
+      <div className="text-xs text-text-muted mt-0.5">{description}</div>
+    </Link>
+  );
+}
+
+/* --- Reusable Empty State --- */
+
+function EmptyState({
+  icon: Icon,
+  title,
+  description,
+  action,
+}: {
+  icon: any;
+  title: string;
+  description: string;
+  action?: { label: string; href: string };
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center py-12 px-4 rounded-xl border border-dashed border-border bg-bg-card/50">
+      <div className="p-3 rounded-xl bg-bg-hover mb-3">
+        <Icon className="w-6 h-6 text-text-muted" />
+      </div>
+      <span className="text-sm font-medium text-text-heading">{title}</span>
+      <p className="text-xs text-text-muted mt-1 text-center max-w-xs">{description}</p>
+      {action && (
+        <Link
+          href={action.href}
+          className="mt-4 inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium rounded-lg bg-primary text-white hover:bg-primary-hover transition-colors"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          {action.label}
+        </Link>
+      )}
+    </div>
+  );
+}
+
+/* --- Helper Components --- */
 
 function StatCard({
   icon: Icon,
@@ -758,7 +992,6 @@ function MiniChart({
         </defs>
         <path d={areaPath} fill={`url(#grad-${label})`} />
         <path d={linePath} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" />
-        {/* Current value dot */}
         <circle
           cx={points[points.length - 1].x}
           cy={points[points.length - 1].y}

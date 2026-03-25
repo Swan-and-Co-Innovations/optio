@@ -1,28 +1,27 @@
-# Implement OpenAI Codex agent adapter
+# Improve web UI landing page design
 
-Implement OpenAI Codex agent adapter
+Improve web UI landing page design
 
 ## Description
 
-The Codex adapter in `packages/agent-adapters/src/claude-code.ts` is currently a stub. `parseResult()` is hardcoded to `success: exitCode === 0` without actually parsing Codex output, and there's no cost tracking, error handling, or PR detection.
+The dashboard is functional but could benefit from a more polished visual design for a strong first impression. Consider:
 
-## Current state
+- A hero section or welcome state for new users with no tasks yet
+- Better visual hierarchy and spacing
+- More polished empty states
+- Clearer onboarding flow for first-time users
 
-- `buildContainerConfig()` is implemented
-- `parseResult()` is a dummy — doesn't parse Codex output format
-- No cost tracking
-- No PR URL extraction from Codex output
-- No Codex-specific error handling
+## Context
+
+First impressions matter for open source adoption. The current page is a data dashboard, which is great for active users but doesn't sell the project to newcomers evaluating it.
 
 ## Acceptance criteria
 
-- Codex adapter correctly parses agent output
-- PR URLs are detected from Codex logs
-- Cost tracking works (if Codex exposes usage data)
-- Error classification handles Codex-specific failure modes
-- If Codex output format can't be determined, remove Codex from the UI agent selector rather than leaving a broken option
+- Landing page looks polished and professional
+- Good empty/first-run state that guides new users
+- Responsive design maintained
 
 ---
 
-_Optio Task ID: 9456a634-2389-49b0-86c2-fcd8192fb33d_
-_Source: [github](https://github.com/jonwiggins/optio/issues/8)_
+_Optio Task ID: aeeb8389-f817-4a2e-b2fc-bbefac4c0b77_
+_Source: [github](https://github.com/jonwiggins/optio/issues/5)_
