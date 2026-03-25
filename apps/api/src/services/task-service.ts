@@ -525,3 +525,12 @@ async function sendSlackNotificationForTask(
   const repoConfig = await getRepoByUrl(task.repoUrl);
   await notifySlackOnTransition({ ...task, state: toState }, toState, repoConfig);
 }
+
+/** Fetch the most recent state-change events across all tasks. */
+export async function getRecentEvents(opts?: { limit?: number }) {
+  return db
+    .select()
+    .from(taskEvents)
+    .orderBy(desc(taskEvents.createdAt))
+    .limit(opts?.limit ?? 20);
+}
