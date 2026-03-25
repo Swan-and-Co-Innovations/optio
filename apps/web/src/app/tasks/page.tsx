@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
+import { usePageTitle } from "@/hooks/use-page-title";
 import { TaskList } from "@/components/task-list";
 import { api } from "@/lib/api-client";
 import { toast } from "sonner";
@@ -9,6 +10,7 @@ import { cn, formatRelativeTime } from "@/lib/utils";
 import { Plus, RotateCcw, XCircle, Loader2, Zap, GitBranch, CircleDot, Check } from "lucide-react";
 
 export default function TasksPage() {
+  usePageTitle("Tasks");
   const [tab, setTab] = useState<"tasks" | "issues">("tasks");
   const [bulkLoading, setBulkLoading] = useState(false);
 
@@ -97,7 +99,18 @@ export default function TasksPage() {
         </button>
       </div>
 
-      {tab === "tasks" && <TaskList />}
+      {tab === "tasks" && (
+        <Suspense
+          fallback={
+            <div className="flex items-center justify-center py-16 text-text-muted">
+              <Loader2 className="w-5 h-5 animate-spin mr-2" />
+              Loading tasks...
+            </div>
+          }
+        >
+          <TaskList />
+        </Suspense>
+      )}
       {tab === "issues" && <IssuesBrowser />}
     </div>
   );

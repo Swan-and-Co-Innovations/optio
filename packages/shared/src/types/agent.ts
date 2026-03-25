@@ -35,6 +35,9 @@ export interface AgentResult {
   summary?: string;
   error?: string;
   costUsd?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  model?: string;
 }
 
 export interface AgentConfig {

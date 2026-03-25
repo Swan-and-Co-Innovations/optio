@@ -38,7 +38,7 @@ export default function WorkflowDetailPage() {
     }
     setExecuting(true);
     try {
-      const result = await api.executeWorkflow(id, { repoUrl: execRepoUrl });
+      const result = await api.executeWorkflow({ workflowId: id, repoUrl: execRepoUrl });
       toast.success(`Workflow started: ${result.tasks.length} tasks created`);
       router.push("/tasks");
     } catch (err) {

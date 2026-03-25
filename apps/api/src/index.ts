@@ -5,6 +5,8 @@ import { startTaskWorker, reconcileOrphanedTasks } from "./workers/task-worker.j
 import { startTicketSyncWorker } from "./workers/ticket-sync-worker.js";
 import { startRepoCleanupWorker } from "./workers/repo-cleanup-worker.js";
 import { startPrWatcherWorker } from "./workers/pr-watcher-worker.js";
+import { startWebhookWorker } from "./workers/webhook-worker.js";
+import { startScheduleWorker } from "./workers/schedule-worker.js";
 import { logger } from "./logger.js";
 
 const redisConnection = {
@@ -50,11 +52,21 @@ process.on("uncaughtException", (err) => {
 async function main() {
   const app = await buildServer();
 
+  // Bind HTTP server first so turbo sees output quickly.
+  // Heavy Redis/BullMQ work is deferred to after listen() to avoid
+  // blocking Turborepo's process management and stalling sibling
+  // dev tasks (e.g. @optio/web never starting).
+  await app.listen({ port: PORT, host: HOST });
+  logger.info(`API server listening on ${HOST}:${PORT}`);
+
+  // --- Background initialization (after listen) ---
+
   // Clean stale repeat jobs from previous server sessions
   await Promise.all([
     cleanRepeatJobs("pr-watcher"),
     cleanRepeatJobs("repo-cleanup"),
     cleanRepeatJobs("ticket-sync"),
+    cleanRepeatJobs("schedule-checker"),
   ]);
 
   // Start BullMQ workers (each re-registers its repeat job)
@@ -71,12 +83,17 @@ async function main() {
   const prWatcherWorker = startPrWatcherWorker();
   logger.info("PR watcher worker started");
 
-  // Re-enqueue any tasks orphaned by a Redis restart
-  await reconcileOrphanedTasks();
+  const webhookWorker = startWebhookWorker();
+  logger.info("Webhook worker started");
 
-  // Start HTTP server
-  await app.listen({ port: PORT, host: HOST });
-  logger.info(`API server listening on ${HOST}:${PORT}`);
+  const scheduleWorker = startScheduleWorker();
+  logger.info("Schedule worker started");
+
+  // Re-enqueue any tasks orphaned by a Redis restart.
+  // The heavy obliterate() call runs last to minimize startup impact.
+  reconcileOrphanedTasks().catch((err) => {
+    logger.error(err, "Failed to reconcile orphaned tasks");
+  });
 
   // Graceful shutdown
   const shutdown = async () => {
@@ -85,6 +102,8 @@ async function main() {
     await ticketSyncWorker.close();
     await repoCleanupWorker.close();
     await prWatcherWorker.close();
+    await webhookWorker.close();
+    await scheduleWorker.close();
     await app.close();
     process.exit(0);
   };

@@ -381,11 +381,14 @@ export function startTaskWorker() {
         const result = adapter.parseResult(inferredExitCode, allLogs);
         await taskService.updateTaskResult(taskId, result.summary, result.error);
 
-        if (result.costUsd != null) {
-          await db
-            .update(tasks)
-            .set({ costUsd: String(result.costUsd) })
-            .where(eq(tasks.id, taskId));
+        // Persist cost, token usage, and model data
+        const costFields: Record<string, unknown> = {};
+        if (result.costUsd != null) costFields.costUsd = String(result.costUsd);
+        if (result.inputTokens != null) costFields.inputTokens = result.inputTokens;
+        if (result.outputTokens != null) costFields.outputTokens = result.outputTokens;
+        if (result.model) costFields.modelUsed = result.model;
+        if (Object.keys(costFields).length > 0) {
+          await db.update(tasks).set(costFields).where(eq(tasks.id, taskId));
         }
 
         // Pick the best PR URL.  Priority:
@@ -477,21 +480,18 @@ export function startTaskWorker() {
           );
         }
 
-        // Handle dependency callbacks (auto-start dependents or cascade failure)
+        // Notify dependency system so dependent tasks can start or cascade-fail
         if (completedTask) {
-          const { onTaskCompleted, onTaskFailed } =
-            await import("../services/dependency-service.js");
-          if (completedTask.state === TaskState.COMPLETED) {
-            await onTaskCompleted(taskId).catch((err) =>
-              log.warn({ err }, "Failed to process dependency completions"),
-            );
-          } else if (
-            completedTask.state === TaskState.FAILED ||
-            completedTask.state === TaskState.CANCELLED
-          ) {
-            await onTaskFailed(taskId).catch((err) =>
-              log.warn({ err }, "Failed to process dependency cascade failure"),
-            );
+          const depService = await import("../services/dependency-service.js");
+          const terminalState = completedTask.state as string;
+          if (terminalState === "completed" || terminalState === "pr_opened") {
+            await depService
+              .onTaskCompleted(taskId)
+              .catch((err) => log.warn({ err }, "Failed to process dependency completion"));
+          } else if (terminalState === "failed" || terminalState === "cancelled") {
+            await depService
+              .onTaskFailed(taskId)
+              .catch((err) => log.warn({ err }, "Failed to process dependency cascade failure"));
           }
         }
       } catch (err) {

@@ -16,6 +16,8 @@ import { bulkRoutes } from "./routes/bulk.js";
 import { issueRoutes } from "./routes/issues.js";
 import { subtaskRoutes } from "./routes/subtasks.js";
 import { analyticsRoutes } from "./routes/analytics.js";
+import { webhookRoutes } from "./routes/webhooks.js";
+import { scheduleRoutes } from "./routes/schedules.js";
 import { dependencyRoutes } from "./routes/dependencies.js";
 import { workflowRoutes } from "./routes/workflows.js";
 import { logStreamWs } from "./ws/log-stream.js";
@@ -67,6 +69,8 @@ export async function buildServer() {
   await app.register(issueRoutes);
   await app.register(subtaskRoutes);
   await app.register(analyticsRoutes);
+  await app.register(webhookRoutes);
+  await app.register(scheduleRoutes);
   await app.register(dependencyRoutes);
   await app.register(workflowRoutes);
 

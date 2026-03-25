@@ -2,11 +2,13 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { usePageTitle } from "@/hooks/use-page-title";
 import { api } from "@/lib/api-client";
-import { Loader2, Sparkles, X } from "lucide-react";
+import { Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
 export default function NewTaskPage() {
+  usePageTitle("New Task");
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [repos, setRepos] = useState<any[]>([]);
@@ -41,11 +43,11 @@ export default function NewTaskPage() {
       })
       .catch(() => {})
       .finally(() => setReposLoading(false));
-
-    // Load existing tasks for dependency selection
     api
-      .listTasks({ limit: 100 })
-      .then((res) => setExistingTasks(res.tasks))
+      .listTasks({ limit: 50 })
+      .then((res) =>
+        setExistingTasks(res.tasks.filter((t: any) => !["cancelled"].includes(t.state))),
+      )
       .catch(() => {});
   }, []);
 
@@ -73,12 +75,9 @@ export default function NewTaskPage() {
         agentType: form.agentType,
         maxRetries: form.maxRetries,
         priority: form.priority,
-        dependsOn: dependsOn.length > 0 ? dependsOn : undefined,
+        ...(dependsOn.length > 0 && { dependsOn }),
       });
-      const desc = res.pendingDependencies
-        ? `Task "${form.title}" waiting for dependencies.`
-        : `Task "${form.title}" has been queued.`;
-      toast.success("Task created", { description: desc });
+      toast.success("Task created", { description: `Task "${form.title}" has been queued.` });
       router.push(`/tasks/${res.task.id}`);
     } catch (err) {
       toast.error("Failed to create task", {
@@ -177,54 +176,6 @@ export default function NewTaskPage() {
           </div>
         </div>
 
-        {/* Dependencies */}
-        <div>
-          <label className="block text-sm text-text-muted mb-1.5">Dependencies (optional)</label>
-          <p className="text-xs text-text-muted/60 mb-1.5">
-            This task will wait until all selected tasks complete before starting.
-          </p>
-          {dependsOn.length > 0 && (
-            <div className="flex flex-wrap gap-2 mb-2">
-              {dependsOn.map((depId) => {
-                const depTask = existingTasks.find((t: any) => t.id === depId);
-                return (
-                  <span
-                    key={depId}
-                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-primary/10 text-primary text-xs"
-                  >
-                    {depTask?.title ?? depId.slice(0, 8)}
-                    <button
-                      type="button"
-                      onClick={() => setDependsOn((d) => d.filter((id) => id !== depId))}
-                      className="hover:text-error"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </span>
-                );
-              })}
-            </div>
-          )}
-          <select
-            value=""
-            onChange={(e) => {
-              if (e.target.value && !dependsOn.includes(e.target.value)) {
-                setDependsOn((d) => [...d, e.target.value]);
-              }
-            }}
-            className="w-full px-3 py-2 rounded-lg bg-bg-card border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-colors"
-          >
-            <option value="">Select a task to depend on...</option>
-            {existingTasks
-              .filter((t: any) => !dependsOn.includes(t.id) && t.state !== "cancelled")
-              .map((t: any) => (
-                <option key={t.id} value={t.id}>
-                  {t.title} ({t.state})
-                </option>
-              ))}
-          </select>
-        </div>
-
         {/* Priority */}
         <div>
           <label className="block text-sm text-text-muted mb-1.5">Priority</label>
@@ -237,14 +188,33 @@ export default function NewTaskPage() {
             max={1000}
             value={form.priority}
             onChange={(e) =>
-              setForm((f) => ({
-                ...f,
-                priority: parseInt(e.target.value, 10) || 100,
-              }))
+              setForm((f) => ({ ...f, priority: parseInt(e.target.value, 10) || 100 }))
             }
             className="w-24 px-3 py-2 rounded-lg bg-bg-card border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-colors"
           />
         </div>
+
+        {/* Dependencies */}
+        {existingTasks.length > 0 && (
+          <div>
+            <label className="block text-sm text-text-muted mb-1.5">Depends On</label>
+            <p className="text-xs text-text-muted/60 mb-1.5">
+              This task will wait until selected tasks complete before starting.
+            </p>
+            <select
+              multiple
+              value={dependsOn}
+              onChange={(e) => setDependsOn(Array.from(e.target.selectedOptions, (o) => o.value))}
+              className="w-full px-3 py-2 rounded-lg bg-bg-card border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-colors min-h-[80px]"
+            >
+              {existingTasks.map((t: any) => (
+                <option key={t.id} value={t.id}>
+                  {t.title} ({t.state})
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* Submit */}
         <button

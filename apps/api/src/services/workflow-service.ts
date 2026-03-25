@@ -18,7 +18,7 @@ export async function createWorkflow(input: CreateWorkflowInput) {
   for (const step of input.steps) {
     if (step.dependsOnSteps) {
       for (const depOrder of step.dependsOnSteps) {
-        stepEdges.push([String(step.stepOrder), String(depOrder)]);
+        stepEdges.push([String(depOrder), String(step.stepOrder)]);
       }
     }
   }
@@ -113,7 +113,7 @@ export async function updateWorkflow(
     for (const step of input.steps) {
       if (step.dependsOnSteps) {
         for (const depOrder of step.dependsOnSteps) {
-          stepEdges.push([String(step.stepOrder), String(depOrder)]);
+          stepEdges.push([String(depOrder), String(step.stepOrder)]);
         }
       }
     }

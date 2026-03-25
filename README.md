@@ -1,93 +1,124 @@
 # Optio
 
-AI Agent Workflow Orchestration — run coding agents (Claude Code, OpenAI Codex) on tasks from your repositories.
+**Autonomous CI/CD for AI coding agents.**
 
-Optio manages the full lifecycle: task intake → container provisioning → agent execution → PR creation → CI monitoring → merge. Agents run in isolated Kubernetes pods with git worktrees for efficient multi-task concurrency.
+[![CI](https://github.com/jonwiggins/optio/actions/workflows/ci.yml/badge.svg)](https://github.com/jonwiggins/optio/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 
-## Demo
+Optio turns coding tasks into merged pull requests — without human babysitting. Submit a task (manually, from a GitHub Issue, or from Linear), and Optio handles the rest: provisions an isolated environment, runs an AI agent, opens a PR, monitors CI, triggers code review, auto-fixes failures, and merges when everything passes.
 
-<p align="center">
-  <img src="docs/screenshots/dashboard-overview.svg" alt="Optio dashboard showing task overview with running, queued, and completed tasks across repositories" width="100%"/>
-</p>
-<p align="center"><em>Dashboard overview — monitor all tasks at a glance with real-time status updates</em></p>
+The feedback loop is what makes it different. When CI fails, the agent is automatically resumed with the failure context. When a reviewer requests changes, the agent picks up the review comments and pushes a fix. When everything passes, the PR is squash-merged and the issue is closed. You describe the work; Optio drives it to completion.
 
 <p align="center">
-  <img src="docs/screenshots/task-detail-logs.svg" alt="Task detail view with live streaming logs showing agent reading files, writing code, and running type checks" width="100%"/>
+  <img src="docs/screenshots/overview.png" alt="Optio dashboard showing 10 running tasks, 19 completed, with Claude Max usage, active pods, and recent task activity" width="100%"/>
 </p>
-<p align="center"><em>Task detail — live-streamed agent logs with tool calls, pipeline progress, and cost tracking</em></p>
+<p align="center"><em>Dashboard — real-time overview of running agents, pod status, costs, and recent activity</em></p>
 
 <p align="center">
-  <img src="docs/screenshots/repo-management.svg" alt="Repository management view showing configured repos with image presets, review settings, and active pod status" width="100%"/>
+  <img src="docs/screenshots/task-detail.png" alt="Task detail view showing live agent logs, pipeline progress through stages (queued, setup, running, PR, CI checks, review, merge, done), and cost tracking" width="100%"/>
 </p>
-<p align="center"><em>Repository management — per-repo agent settings, image presets, and active pod monitoring</em></p>
+<p align="center"><em>Task detail — live-streamed agent output with pipeline progress, PR tracking, and cost breakdown</em></p>
 
-## Features
+## How It Works
 
-- **Pod-per-repo architecture** — one long-lived pod per repository, tasks run in git worktrees for efficient multi-task concurrency
-- **Priority queue** — per-repo and global concurrency limits, task reordering, bulk operations (retry all failed, cancel all active)
-- **Subtask system** — child tasks, sequential steps, and code reviews as blocking subtasks
-- **Code review agent** — auto-triggered on CI pass, PR open, or manual; scoped to the assigned PR; configurable review model and prompt
-- **PR lifecycle tracking** — polls GitHub every 30s for CI checks, review status, merge state; auto-completes on merge, auto-fails on close, auto-resumes agent on "changes requested"
-- **Multi-agent support** — Claude Code and OpenAI Codex, with Max subscription (`CLAUDE_CODE_OAUTH_TOKEN`) or API key auth
-- **Per-repo agent tuning** — Claude model, context window (200k/1M), thinking budget, effort level, prompt template overrides
-- **Configurable prompts** — Handlebars-style templates with `{{variables}}` and `{{#if}}` conditionals, per-repo or global
-- **Auto-detect image preset** — inspects repo contents (Cargo.toml -> rust, package.json -> node, etc.) and selects the right container image
-- **Container image presets** — base, node, python, go, rust, full — or bring your own Dockerfile
-- **GitHub Issues integration** — browse issues in the UI, one-click assign to Optio, auto-label and comment back with PR links
-- **Linear ticket provider** — fetch actionable tickets, add comments, update state
-- **Real-time UI** — live log streaming, structured event viewer, task state timeline, cost tracking per task
-- **Pod health monitoring** — auto-restart crashed/OOM-killed pods, orphaned worktree cleanup, persistent volumes per repo
-- **Session resume** — capture Claude session IDs, resume interrupted work with follow-up prompts
-- **Setup wizard** — guided onboarding with credential validation and repo auto-detection
-- **Helm charts** — production-ready Kubernetes deployment with RBAC, health probes, and ingress
+```
+You create a task          Optio runs the agent           Optio closes the loop
+─────────────────          ──────────────────────         ──────────────────────
 
-## Quick Start
-
-### Prerequisites
-
-- **Docker Desktop** with Kubernetes enabled (Settings → Kubernetes → Enable)
-- **Node.js 22+** and **pnpm 10+**
-
-### Setup
-
-```bash
-# Clone and install
-git clone https://github.com/jonwiggins/optio.git && cd optio
-pnpm install
-
-# Bootstrap infrastructure (Postgres + Redis in K8s, migrations, .env)
-./scripts/setup-local.sh
-
-# Start dev servers
-pnpm dev
-# API → http://localhost:4000
-# Web → http://localhost:3000
+  GitHub Issue              Provision repo pod             CI fails?
+  Manual task       ──→     Create git worktree    ──→       → Resume agent with failure context
+  Linear ticket             Run Claude Code / Codex        Review requests changes?
+                            Open a PR                        → Resume agent with feedback
+                                                           CI passes + approved?
+                                                             → Squash-merge + close issue
 ```
 
-The setup wizard will guide you through configuring GitHub access, agent credentials, and repositories.
+1. **Intake** — tasks come from the web UI, GitHub Issues (one-click assign), or Linear tickets
+2. **Provisioning** — Optio finds or creates a Kubernetes pod for the repo, creates a git worktree for isolation
+3. **Execution** — the AI agent (Claude Code or OpenAI Codex) runs with your configured prompt, model, and settings
+4. **PR lifecycle** — Optio polls the PR every 30s for CI status, review state, and merge readiness
+5. **Feedback loop** — CI failures, merge conflicts, and review feedback automatically resume the agent with context
+6. **Completion** — PR is squash-merged, linked issues are closed, costs are recorded
 
-### Build the Agent Image
+## Key Features
 
-```bash
-docker build -t optio-agent:latest -f Dockerfile.agent .
-```
+### Autonomous feedback loop
+
+The core differentiator. Optio doesn't just run an agent and walk away — it monitors the PR and drives it to completion:
+
+- **Auto-resume on CI failure** — agent is re-queued with the names of failed checks
+- **Auto-resume on merge conflicts** — agent is told to rebase and force-push
+- **Auto-resume on review feedback** — reviewer comments are passed as the resume prompt
+- **Auto-merge** — when CI passes and reviews are approved, the PR is squash-merged
+- **Auto-close issues** — linked GitHub Issues are closed with a comment linking the merged PR
+
+### Pod-per-repo architecture
+
+One long-lived Kubernetes pod per repository. The pod clones the repo once, then stays alive. Each task gets its own git worktree, so multiple tasks run concurrently without interference.
+
+- **Multi-pod scaling** — repos can scale beyond a single pod (`maxPodInstances` up to 20)
+- **Persistent volumes** — installed tools and caches survive pod restarts
+- **Idle cleanup** — pods are reclaimed after 10 minutes of inactivity (configurable)
+- **Health monitoring** — crashed/OOM-killed pods are auto-detected and restarted
+- **Worktree lifecycle** — automatic cleanup with grace periods for retries
+
+### Code review agent
+
+Optio can automatically launch a review agent as a subtask of the original coding task:
+
+- Triggered on CI pass, on PR open, or manually
+- Runs with a separate review-specific prompt and model (use a cheaper model for reviews)
+- Blocking — the parent task waits for the review to complete before merging
+- Configurable per-repo with custom review prompt templates
+
+### Per-repo agent tuning
+
+Each repository can be individually configured:
+
+- **Claude model** — Opus or Sonnet, with context window (200k or 1M), thinking on/off, effort level
+- **Container image** — auto-detected from repo contents (Node, Python, Go, Rust, Full) or custom Dockerfile
+- **Prompt templates** — Handlebars-style templates with `{{variables}}` and `{{#if}}` conditionals
+- **Concurrency** — max concurrent tasks per repo, max pods per repo, max agents per pod
+- **Extra packages and setup commands** — apt packages and shell commands run at pod startup
+- **`.optio/setup.sh`** — repo-level setup script run after clone
+
+### Task management
+
+- **Priority queue** — integer priorities with drag-to-reorder
+- **Bulk operations** — retry all failed, cancel all active
+- **Subtask system** — child tasks, sequential pipeline steps, and review subtasks
+- **Cost tracking** — per-task cost in USD, with analytics dashboard (daily trends, per-repo breakdown, top tasks)
+- **Error classification** — failures are categorized (auth, network, timeout, resource, etc.) with human-readable descriptions and suggested remedies
+
+### Integrations
+
+- **GitHub Issues** — browse issues in the UI, one-click assign to Optio, auto-label and comment back with PR links
+- **Linear** — fetch actionable tickets, sync status, add comments
+- **Multi-provider OAuth** — GitHub, Google, and GitLab authentication for the web UI
+- **Claude Code + OpenAI Codex** — API key or Max Subscription (OAuth token) auth
+
+### Real-time UI
+
+- **Live log streaming** — structured agent output streamed via WebSocket
+- **Pipeline progress** — visual stage tracker (queued → setup → running → PR → CI → review → merge → done)
+- **Event timeline** — full audit trail of state transitions
+- **Cluster view** — pod status, resource usage, health events
+- **Cost analytics** — daily cost trends, per-repo and per-type breakdowns, period comparisons
 
 ## Architecture
-
-### System Components
 
 ```
 ┌──────────────┐     ┌────────────────────┐     ┌──────────────────────────┐
 │   Web UI     │────→│    API Server      │────→│      Kubernetes          │
 │   Next.js    │     │    Fastify         │     │                          │
-│   :3000      │     │                    │     │  ┌── Repo Pod A ──────┐  │
+│   :3100      │     │                    │     │  ┌── Repo Pod A ──────┐  │
 │              │←ws──│  Workers:          │     │  │ clone + sleep      │  │
-│  - Dashboard │     │  ├─ Task Queue     │     │  │ ├─ worktree 1  ⚡  │  │
-│  - Tasks     │     │  ├─ PR Watcher     │     │  │ ├─ worktree 2  ⚡  │  │
-│  - Repos     │     │  ├─ Health Mon     │     │  │ └─ worktree N  ⚡  │  │
-│  - Cluster   │     │  └─ Ticket Sync    │     │  └────────────────────┘  │
-│  - Issues    │     │                    │     │  ┌── Repo Pod B ──────┐  │
-│  - Settings  │     │  Services:         │     │  │ clone + sleep      │  │
+│  Dashboard   │     │  ├─ Task Queue     │     │  │ ├─ worktree 1  ⚡  │  │
+│  Tasks       │     │  ├─ PR Watcher     │     │  │ ├─ worktree 2  ⚡  │  │
+│  Repos       │     │  ├─ Health Mon     │     │  │ └─ worktree N  ⚡  │  │
+│  Cluster     │     │  └─ Ticket Sync    │     │  └────────────────────┘  │
+│  Costs       │     │                    │     │  ┌── Repo Pod B ──────┐  │
+│  Issues      │     │  Services:         │     │  │ clone + sleep      │  │
 │              │     │  ├─ Repo Pool      │     │  │ └─ worktree 1  ⚡  │  │
 │              │     │  ├─ Review Agent   │     │  └────────────────────┘  │
 │              │     │  └─ Auth/Secrets   │     │                          │
@@ -99,11 +130,7 @@ docker build -t optio-agent:latest -f Dockerfile.agent .
                         └─────────────┘
 ```
 
-One pod runs per repository. The pod clones the repo once, then stays alive. Each task gets its own git worktree inside the pod, so multiple tasks can run concurrently against the same repo without interference. Pods idle for 10 minutes (configurable), then get cleaned up. A health monitor watches for crashed/OOM-killed pods and auto-restarts them.
-
-### Task Lifecycle
-
-Every task follows a loop: the agent writes code, opens a PR, and then the system monitors, reviews, and self-heals until the PR merges.
+### Task lifecycle
 
 ```
   ┌─────────────────────────────────────────────────┐
@@ -147,11 +174,6 @@ Every task follows a loop: the agent writes code, opens a PR, and then the syste
   │   CI passes + ───────→  Auto-merge    ───────┘        │
   │   review done?           & close issue                │
   │                                                       │
-  │         ┌───────────────────────┐                     │
-  │         │  agent pushes fix,    │                     │
-  │         │  returns to PR OPENED │                     │
-  │         └───────────────────────┘                     │
-  │                                                       │
   │                          ┌─────────────┐              │
   │                          │  COMPLETED  │              │
   │                          │  PR merged  │              │
@@ -160,91 +182,69 @@ Every task follows a loop: the agent writes code, opens a PR, and then the syste
   └───────────────────────────────────────────────────────┘
 ```
 
-**Key behaviors:**
+## Quick Start
 
-- **Auto-resume on CI failure** — the agent is re-queued with the names of failed checks
-- **Auto-resume on merge conflicts** — the agent is told to rebase and force-push
-- **Auto-resume on review feedback** — review comments are passed as the resume prompt
-- **Auto-merge** — when CI passes and blocking subtasks complete, the PR is squash-merged
-- **Auto-close issues** — linked GitHub issues are closed with a comment when the task completes
-- **Stale detection** — tasks stuck in `running` for 10+ minutes are automatically retried
-- **Startup reconciliation** — orphaned tasks from Redis restarts are re-queued on server boot
+### Prerequisites
+
+- **Docker Desktop** with Kubernetes enabled (Settings → Kubernetes → Enable)
+- **Node.js 22+** and **pnpm 10+**
+
+### Setup
+
+```bash
+# Clone and install
+git clone https://github.com/jonwiggins/optio.git && cd optio
+pnpm install
+
+# Bootstrap infrastructure (Postgres + Redis in K8s, migrations, .env)
+./scripts/setup-local.sh
+
+# Build the agent image
+docker build -t optio-agent:latest -f Dockerfile.agent .
+
+# Start dev servers
+pnpm dev
+# API → http://localhost:4000
+# Web → http://localhost:3100
+```
+
+The setup wizard walks you through configuring GitHub access, agent credentials (API key or Max Subscription), and adding your first repository.
 
 ## Project Structure
 
 ```
 apps/
-  api/          Fastify API, BullMQ workers (task, PR watcher, health, ticket sync),
-                WebSocket endpoints, review service, subtask system
-  web/          Next.js dashboard with real-time streaming
+  api/          Fastify API server, BullMQ workers, WebSocket endpoints,
+                review service, subtask system, OAuth providers
+  web/          Next.js dashboard with real-time streaming, cost analytics
 
 packages/
   shared/             Types, task state machine, prompt templates, error classifier
   container-runtime/  Kubernetes pod lifecycle, exec, log streaming
   agent-adapters/     Claude Code + Codex prompt/auth adapters
-  ticket-providers/   GitHub Issues, Linear (+ Notion stub)
+  ticket-providers/   GitHub Issues, Linear
 
-images/               Dockerfiles: base, node, python, go, rust, full
-helm/optio/           Helm chart for production K8s deployment
-k8s/                  Local dev manifests (namespace, infrastructure)
+images/               Container Dockerfiles: base, node, python, go, rust, full
+helm/optio/           Helm chart for production Kubernetes deployment
 scripts/              Setup, init, and entrypoint scripts
 ```
 
-## Configuration
+## Production Deployment
 
-### Per-Repo Settings
-
-Each repository can be configured with:
-
-- **Container image** — auto-detected from repo contents, or manually set to a preset (base/node/python/go/rust/full) or custom Dockerfile
-- **Extra packages** — apt packages installed at pod startup
-- **Setup commands** — shell commands run after clone
-- **Prompt template override** — custom agent instructions for this repo
-- **Auto-merge** — whether agents should merge PRs after CI passes
-- **Claude model settings** — model (opus/sonnet), context window (200k/1M), thinking on/off, effort level (low/medium/high)
-- **Concurrency limit** — max concurrent tasks per repo
-- **Code review** — enable/disable, trigger (on CI pass, on PR open, or manual), review model, review prompt template
-- **Auto-resume on review** — automatically re-queue the agent when a reviewer requests changes
-- **Setup script** — `.optio/setup.sh` in the repo runs after clone
-
-### Prompt Templates
-
-Agents receive a system prompt rendered with these variables:
-
-- `{{TASK_FILE}}` — path to the task description file
-- `{{BRANCH_NAME}}` — the working branch
-- `{{TASK_ID}}` — unique task identifier
-- `{{TASK_TITLE}}` — task title
-- `{{REPO_NAME}}` — repository name (owner/repo)
-- `{{AUTO_MERGE}}` — for conditional merge instructions
-- `{{#if VAR}}...{{else}}...{{/if}}` — conditional blocks
-
-Review tasks use a separate prompt template with `{{PR_NUMBER}}`, `{{TEST_COMMAND}}`, and other review-specific variables.
-
-### Authentication
-
-Claude Code supports two auth modes:
-
-- **API Key** — `ANTHROPIC_API_KEY` injected into the container
-- **Max Subscription** — `CLAUDE_CODE_OAUTH_TOKEN` read from the host's macOS Keychain or `~/.claude/.credentials.json`, cached for 30s with auto-refresh
-
-## Development
+Optio ships with a Helm chart for production Kubernetes clusters:
 
 ```bash
-pnpm dev                              # Start API (:4000) + Web (:3000) via Turborepo
-pnpm turbo typecheck                  # Typecheck all packages
-pnpm turbo test                       # Run tests (Vitest)
-pnpm format:check                     # Check formatting (Prettier)
+helm install optio helm/optio \
+  --set encryption.key=$(openssl rand -hex 32) \
+  --set postgresql.enabled=false \
+  --set externalDatabase.url="postgres://..." \
+  --set redis.enabled=false \
+  --set externalRedis.url="redis://..." \
+  --set ingress.enabled=true \
+  --set ingress.hosts[0].host=optio.example.com
 ```
 
-Pre-commit hooks run lint-staged, format checks, and typecheck (mirroring CI). Commit messages follow the [Conventional Commits](https://www.conventionalcommits.org/) spec via commitlint.
-
-## Teardown
-
-```bash
-pkill -f 'kubectl port-forward.*optio'
-kubectl delete namespace optio
-```
+See the [Helm chart values](helm/optio/values.yaml) for full configuration options including OAuth providers, resource limits, and agent image settings.
 
 ## Tech Stack
 
@@ -255,7 +255,16 @@ kubectl delete namespace optio
 | Web      | Next.js 15, Tailwind CSS 4, Zustand                              |
 | Database | PostgreSQL 16                                                    |
 | Queue    | Redis 7 + BullMQ                                                 |
-| Runtime  | Kubernetes (Docker Desktop for local)                            |
-| Deploy   | Helm chart (`helm/optio/`)                                       |
+| Runtime  | Kubernetes (Docker Desktop for local dev)                        |
+| Deploy   | Helm chart                                                       |
+| Auth     | Multi-provider OAuth (GitHub, Google, GitLab)                    |
 | CI       | GitHub Actions (format, typecheck, test, build-web, build-image) |
 | Agents   | Claude Code, OpenAI Codex                                        |
+
+## Contributing
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for development setup, workflow, and conventions.
+
+## License
+
+[MIT](./LICENSE)

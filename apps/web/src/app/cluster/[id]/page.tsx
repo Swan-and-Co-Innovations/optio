@@ -1,6 +1,7 @@
 "use client";
 
 import { use, useEffect, useState } from "react";
+import { usePageTitle } from "@/hooks/use-page-title";
 import { api } from "@/lib/api-client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -23,6 +24,7 @@ export default function PodDetailPage({ params }: { params: Promise<{ id: string
   const { id } = use(params);
   const router = useRouter();
   const [pod, setPod] = useState<any>(null);
+  usePageTitle(pod?.podName ?? "Pod");
   const [loading, setLoading] = useState(true);
   const [healthEvents, setHealthEvents] = useState<any[]>([]);
   const [restarting, setRestarting] = useState(false);

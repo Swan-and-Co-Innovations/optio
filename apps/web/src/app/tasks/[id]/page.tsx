@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { use, useState, useEffect } from "react";
+import { usePageTitle } from "@/hooks/use-page-title";
 import { useTask } from "@/hooks/use-task";
 import { LogViewer } from "@/components/log-viewer";
 import { PipelineTimeline } from "@/components/pipeline-timeline";
@@ -14,6 +15,7 @@ import {
   RefreshCw,
   XCircle,
   RotateCcw,
+  Play,
   ExternalLink,
   GitBranch,
   Clock,
@@ -27,6 +29,7 @@ import { toast } from "sonner";
 export default function TaskDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { task, events, loading, error, refresh } = useTask(id);
+  usePageTitle(task?.title ?? "Task");
   const [actionLoading, setActionLoading] = useState(false);
   const [resumePrompt, setResumePrompt] = useState("");
   const [showTimeline, setShowTimeline] = useState(true);
@@ -112,6 +115,18 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
     setActionLoading(false);
   };
 
+  const handleForceRestart = async () => {
+    setActionLoading(true);
+    try {
+      await api.forceRestartTask(id);
+      toast.success("Task re-queued on existing PR branch");
+      await refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to restart task");
+    }
+    setActionLoading(false);
+  };
+
   const handleCreateSubtask = async () => {
     if (!newSubtask.title.trim() || !newSubtask.prompt.trim()) return;
     setActionLoading(true);
@@ -158,6 +173,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
   const canCancel = ["running", "queued", "provisioning", "needs_attention"].includes(task.state);
   const canRetry = ["failed", "cancelled"].includes(task.state);
   const canResume = ["needs_attention", "failed"].includes(task.state) && !!task.sessionId;
+  const canForceRestart = ["needs_attention", "failed", "pr_opened"].includes(task.state);
 
   // (log filtering is handled by LogViewer component)
 
@@ -216,6 +232,17 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
               >
                 <RotateCcw className="w-3 h-3" />
                 Retry
+              </button>
+            )}
+            {canForceRestart && (
+              <button
+                onClick={handleForceRestart}
+                disabled={actionLoading}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-success/10 text-success text-xs hover:bg-success/20 transition-colors disabled:opacity-50"
+                title="Start a fresh agent session on the existing PR branch"
+              >
+                <Play className="w-3 h-3" />
+                Attempt Resume
               </button>
             )}
             <button
@@ -393,49 +420,54 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
       {/* Dependencies */}
       {(dependencies.length > 0 || dependents.length > 0) && (
         <div className="shrink-0 border-b border-border bg-bg px-4 py-2.5">
-          <div className="max-w-5xl mx-auto">
-            {dependencies.length > 0 && (
-              <div className="mb-2">
-                <h3 className="text-xs font-medium text-text-muted mb-1.5">
-                  Depends on (
-                  {dependencies.filter((d: any) => d.depTaskState === "completed").length}/
-                  {dependencies.length} complete)
-                </h3>
-                <div className="space-y-1">
-                  {dependencies.map((dep: any) => (
-                    <Link
-                      key={dep.id}
-                      href={`/tasks/${dep.dependsOnTaskId}`}
-                      className="flex items-center gap-2 p-2 rounded-md border border-border bg-bg-card text-xs transition-colors hover:bg-bg-hover"
-                    >
-                      <span className="truncate flex-1">{dep.depTaskTitle}</span>
-                      <StateBadge state={dep.depTaskState} />
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            )}
-            {dependents.length > 0 && (
-              <div>
-                <h3 className="text-xs font-medium text-text-muted mb-1.5">
-                  Blocks ({dependents.length} task
-                  {dependents.length !== 1 ? "s" : ""})
-                </h3>
-                <div className="space-y-1">
-                  {dependents.map((dep: any) => (
-                    <Link
-                      key={dep.id}
-                      href={`/tasks/${dep.taskId}`}
-                      className="flex items-center gap-2 p-2 rounded-md border border-border bg-bg-card text-xs transition-colors hover:bg-bg-hover"
-                    >
-                      <span className="truncate flex-1">{dep.taskTitle}</span>
-                      <StateBadge state={dep.taskState} />
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
+          {dependencies.length > 0 && (
+            <div className="mb-2">
+              <span className="text-xs font-medium text-text-muted mr-2">Depends on:</span>
+              {dependencies.map((dep: any) => (
+                <Link
+                  key={dep.dependsOnTaskId}
+                  href={`/tasks/${dep.dependsOnTaskId}`}
+                  className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-bg-emphasis text-text-secondary hover:text-text mr-1"
+                >
+                  {dep.taskTitle || dep.dependsOnTaskId.slice(0, 8)}
+                  <span
+                    className={cn(
+                      "inline-block w-1.5 h-1.5 rounded-full ml-1",
+                      dep.taskState === "completed"
+                        ? "bg-green-500"
+                        : dep.taskState === "failed"
+                          ? "bg-red-500"
+                          : "bg-yellow-500",
+                    )}
+                  />
+                </Link>
+              ))}
+            </div>
+          )}
+          {dependents.length > 0 && (
+            <div>
+              <span className="text-xs font-medium text-text-muted mr-2">Blocks:</span>
+              {dependents.map((dep: any) => (
+                <Link
+                  key={dep.taskId}
+                  href={`/tasks/${dep.taskId}`}
+                  className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-bg-emphasis text-text-secondary hover:text-text mr-1"
+                >
+                  {dep.taskTitle || dep.taskId.slice(0, 8)}
+                  <span
+                    className={cn(
+                      "inline-block w-1.5 h-1.5 rounded-full ml-1",
+                      dep.taskState === "completed"
+                        ? "bg-green-500"
+                        : dep.taskState === "failed"
+                          ? "bg-red-500"
+                          : "bg-yellow-500",
+                    )}
+                  />
+                </Link>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

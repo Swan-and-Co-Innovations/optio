@@ -118,7 +118,28 @@
       "idx": 16,
       "version": "7",
       "when": 1774368000000,
-      "tag": "0016_task_dependencies_workflows",
+      "tag": "0016_add_query_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1774454400000,
+      "tag": "0017_cost_optimization_tokens",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1774540800000,
+      "tag": "0018_scheduled_tasks",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1774627200000,
+      "tag": "0019_task_dependencies_workflows",
       "breakpoints": true
     }
   ]

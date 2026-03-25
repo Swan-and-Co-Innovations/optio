@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePageTitle } from "@/hooks/use-page-title";
 import { api } from "@/lib/api-client";
 import { TaskCard } from "@/components/task-card";
 import Link from "next/link";
@@ -89,6 +90,7 @@ interface TaskStats {
 }
 
 export default function OverviewPage() {
+  usePageTitle("Overview");
   const [taskStats, setTaskStats] = useState<TaskStats | null>(null);
   const [recentTasks, setRecentTasks] = useState<any[]>([]);
   const [repoCount, setRepoCount] = useState<number | null>(null);

@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePageTitle } from "@/hooks/use-page-title";
 import { api } from "@/lib/api-client";
 import Link from "next/link";
 import { Loader2, FolderGit2, Lock, Globe, ChevronRight, Settings2, Plus } from "lucide-react";
 
 export default function ReposPage() {
+  usePageTitle("Repositories");
   const [repos, setRepos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
