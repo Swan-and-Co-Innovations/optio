@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { eq, and, lt, sql } from "drizzle-orm";
+import { eq, and, lt, sql, asc } from "drizzle-orm";
 import { db } from "../db/client.js";
-import { repoPods } from "../db/schema.js";
+import { repoPods, tasks } from "../db/schema.js";
 import { getRuntime } from "./container-service.js";
 import type { ContainerHandle, ContainerSpec, ExecSession, RepoImageConfig } from "@optio/shared";
 import { DEFAULT_AGENT_IMAGE, PRESET_IMAGES, generateRepoPodName } from "@optio/shared";
@@ -13,6 +13,7 @@ export interface RepoPod {
   id: string;
   repoUrl: string;
   repoBranch: string;
+  instanceIndex: number;
   podName: string | null;
   podId: string | null;
   state: string;
@@ -20,58 +21,112 @@ export interface RepoPod {
 }
 
 /**
- * Get or create a repo pod for the given repo URL.
- * If a pod already exists and is ready, return it.
- * If one is provisioning, wait for it.
- * If none exists, create one.
+ * Select (or create) a repo pod for the given repo URL.
+ *
+ * Multi-pod scheduling:
+ *   1. If preferredPodId is given (same-pod retry), try that pod first.
+ *   2. Pick the ready pod with the fewest active tasks that isn't at capacity.
+ *   3. If all pods are at capacity and under the instance limit, create a new one.
+ *   4. If at the instance limit, return the least-loaded ready pod.
  */
 export async function getOrCreateRepoPod(
   repoUrl: string,
   repoBranch: string,
   env: Record<string, string>,
   imageConfig?: RepoImageConfig,
+  opts?: { preferredPodId?: string; maxAgentsPerPod?: number; maxPodInstances?: number },
 ): Promise<RepoPod> {
-  // Check for existing pod
-  const [existing] = await db.select().from(repoPods).where(eq(repoPods.repoUrl, repoUrl));
+  const maxAgentsPerPod = opts?.maxAgentsPerPod ?? 2;
+  const maxPodInstances = opts?.maxPodInstances ?? 1;
 
-  if (existing) {
-    if (existing.state === "ready" && existing.podName) {
-      // Verify the pod is still running
+  // 1. Try preferred pod (same-pod retry)
+  if (opts?.preferredPodId) {
+    const [preferred] = await db
+      .select()
+      .from(repoPods)
+      .where(eq(repoPods.id, opts.preferredPodId));
+    if (preferred && preferred.state === "ready" && preferred.podName) {
       const rt = getRuntime();
       try {
         const status = await rt.status({
-          id: existing.podId ?? existing.podName,
-          name: existing.podName,
+          id: preferred.podId ?? preferred.podName,
+          name: preferred.podName,
         });
-        if (status.state === "running") {
-          return existing as RepoPod;
+        if (status.state === "running" && preferred.activeTaskCount < maxAgentsPerPod) {
+          return preferred as RepoPod;
         }
       } catch {
-        // Pod is gone, clean up the record
+        // Pod gone — fall through to general selection
       }
-      // Pod is dead, remove record and recreate
-      await db.delete(repoPods).where(eq(repoPods.id, existing.id));
-    } else if (existing.state === "provisioning") {
-      // Wait for it (poll)
-      return waitForPodReady(existing.id);
-    } else if (existing.state === "error") {
-      // Clean up and recreate
-      await db.delete(repoPods).where(eq(repoPods.id, existing.id));
     }
   }
 
-  // Create new repo pod — use upsert to handle concurrent callers
-  try {
-    return await createRepoPod(repoUrl, repoBranch, env, imageConfig);
-  } catch (err: any) {
-    // If another caller just inserted for the same repoUrl, retry the lookup
-    if (err?.message?.includes("unique") || err?.code === "23505") {
-      logger.info({ repoUrl }, "Concurrent pod creation detected, waiting for existing pod");
-      const [retry] = await db.select().from(repoPods).where(eq(repoPods.repoUrl, repoUrl));
-      if (retry) {
-        if (retry.state === "ready" && retry.podName) return retry as RepoPod;
-        if (retry.state === "provisioning") return waitForPodReady(retry.id);
+  // 2. Find all pods for this repo
+  const existingPods = await db
+    .select()
+    .from(repoPods)
+    .where(eq(repoPods.repoUrl, repoUrl))
+    .orderBy(asc(repoPods.activeTaskCount));
+
+  // Try to find a ready pod with capacity
+  const rt = getRuntime();
+  for (const pod of existingPods) {
+    if (pod.state === "ready" && pod.podName && pod.activeTaskCount < maxAgentsPerPod) {
+      try {
+        const status = await rt.status({
+          id: pod.podId ?? pod.podName,
+          name: pod.podName,
+        });
+        if (status.state === "running") {
+          return pod as RepoPod;
+        }
+      } catch {
+        // Pod is gone, clean up record
       }
+      await db.delete(repoPods).where(eq(repoPods.id, pod.id));
+    } else if (pod.state === "provisioning") {
+      return waitForPodReady(pod.id);
+    } else if (pod.state === "error") {
+      await db.delete(repoPods).where(eq(repoPods.id, pod.id));
+    }
+  }
+
+  // 3. Count remaining valid pods for this repo
+  const [{ count: currentPodCount }] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(repoPods)
+    .where(eq(repoPods.repoUrl, repoUrl));
+
+  if (Number(currentPodCount) >= maxPodInstances) {
+    // At instance limit — try to find any ready pod (even if at capacity)
+    const [busyPod] = await db
+      .select()
+      .from(repoPods)
+      .where(and(eq(repoPods.repoUrl, repoUrl), eq(repoPods.state, "ready")))
+      .orderBy(asc(repoPods.activeTaskCount))
+      .limit(1);
+    if (busyPod) {
+      return busyPod as RepoPod;
+    }
+    // Wait for provisioning pod
+    const [provisioningPod] = await db
+      .select()
+      .from(repoPods)
+      .where(and(eq(repoPods.repoUrl, repoUrl), eq(repoPods.state, "provisioning")));
+    if (provisioningPod) {
+      return waitForPodReady(provisioningPod.id);
+    }
+    throw new Error(`All ${maxPodInstances} pod instances for ${repoUrl} are unavailable`);
+  }
+
+  // 4. Create new pod instance
+  const instanceIndex = Number(currentPodCount);
+  try {
+    return await createRepoPod(repoUrl, repoBranch, env, imageConfig, instanceIndex);
+  } catch (err: any) {
+    if (err?.message?.includes("unique") || err?.code === "23505") {
+      logger.info({ repoUrl }, "Concurrent pod creation detected, retrying lookup");
+      return getOrCreateRepoPod(repoUrl, repoBranch, env, imageConfig, opts);
     }
     throw err;
   }
@@ -90,25 +145,23 @@ async function createRepoPod(
   repoBranch: string,
   env: Record<string, string>,
   imageConfig?: RepoImageConfig,
+  instanceIndex = 0,
 ): Promise<RepoPod> {
-  // Insert record first
   const [record] = await db
     .insert(repoPods)
-    .values({ repoUrl, repoBranch, state: "provisioning" })
+    .values({ repoUrl, repoBranch, state: "provisioning", instanceIndex })
     .returning();
 
   const rt = getRuntime();
   const image = resolveImage(imageConfig);
 
-  // Create a PVC for persistent home directory (tools, caches)
-  const pvcName = `optio-home-${repoUrl.replace(/[^a-zA-Z0-9]/g, "-").slice(0, 40)}`;
+  const pvcSuffix = instanceIndex > 0 ? `-${instanceIndex}` : "";
+  const pvcName = `optio-home-${repoUrl.replace(/[^a-zA-Z0-9]/g, "-").slice(0, 40)}${pvcSuffix}`;
   try {
     const { execFile } = await import("node:child_process");
     const { promisify } = await import("node:util");
     const execFileAsync = promisify(execFile);
 
-    // Check if PVC already exists (async to avoid blocking the event loop,
-    // which kills BullMQ heartbeats and triggers stall detection)
     const { stdout: existsOut } = await execFileAsync("bash", [
       "-c",
       `kubectl get pvc ${pvcName} -n optio 2>/dev/null && echo "yes" || echo "no"`,
@@ -137,9 +190,9 @@ spec:
   }
 
   try {
-    // Launch a pod that clones the repo then sleeps forever
+    const podName = generateRepoPodName(repoUrl);
     const spec: ContainerSpec = {
-      name: generateRepoPodName(repoUrl),
+      name: podName,
       image,
       command: ["/opt/optio/repo-init.sh"],
       env: {
@@ -158,13 +211,13 @@ spec:
       labels: {
         "optio.repo-url": repoUrl.replace(/[^a-zA-Z0-9-_.]/g, "_").slice(0, 63),
         "optio.type": "repo-pod",
+        "optio.instance-index": String(instanceIndex),
         "managed-by": "optio",
       },
     };
 
     const handle = await rt.create(spec);
 
-    // Update record with pod info
     await db
       .update(repoPods)
       .set({
@@ -175,7 +228,7 @@ spec:
       })
       .where(eq(repoPods.id, record.id));
 
-    logger.info({ repoUrl, podName: handle.name }, "Repo pod created");
+    logger.info({ repoUrl, podName: handle.name, instanceIndex }, "Repo pod created");
 
     return {
       ...record,
@@ -217,6 +270,7 @@ export async function execTaskInRepoPod(
   taskId: string,
   agentCommand: string[],
   env: Record<string, string>,
+  opts?: { resetWorktree?: boolean },
 ): Promise<ExecSession> {
   const rt = getRuntime();
   const handle: ContainerHandle = { id: pod.podId ?? pod.podName!, name: pod.podName! };
@@ -231,36 +285,84 @@ export async function execTaskInRepoPod(
     })
     .where(eq(repoPods.id, pod.id));
 
-  // Build the exec command: create worktree, set up env, run agent
-  // Encode env as base64 JSON, decode in the script to handle multi-line values safely
+  // Update task worktree state to active and record which pod it's running on
+  await db
+    .update(tasks)
+    .set({ worktreeState: "active", lastPodId: pod.id, updatedAt: new Date() })
+    .where(eq(tasks.id, taskId));
+
+  // Build the exec command
   const envJson = JSON.stringify({ ...env, OPTIO_TASK_ID: taskId });
   const envB64 = Buffer.from(envJson).toString("base64");
-  // Unique token for this run — used to prevent stale cleanup traps from
-  // deleting a retry's worktree (see Bug 3 in the cleanup trap below)
   const runToken = randomUUID();
+
+  // Build worktree setup commands based on whether we're resetting or creating fresh
+  const worktreeSetup = opts?.resetWorktree
+    ? [
+        `if [ -d "/workspace/tasks/${taskId}" ]; then`,
+        `  echo "[optio] Resetting existing worktree for retry..."`,
+        `  cd /workspace/tasks/${taskId}`,
+        `  git checkout -- . 2>/dev/null || true`,
+        `  git clean -fd 2>/dev/null || true`,
+        `  cd /workspace/repo`,
+        `  echo "[optio] Worktree reset complete"`,
+        `else`,
+        `  echo "[optio] No existing worktree found, creating fresh..."`,
+        `  git branch -D optio/task-${taskId} 2>/dev/null || true`,
+        `  if ! git worktree add /workspace/tasks/${taskId} -b optio/task-${taskId} origin/${env.OPTIO_REPO_BRANCH ?? "main"} 2>/dev/null; then`,
+        `    echo "[optio] Cleaning up stale worktree references..."`,
+        `    git worktree remove --force /workspace/tasks/${taskId}-wt 2>/dev/null || true`,
+        `    for wt_path in $(git worktree list --porcelain | grep -B1 "branch refs/heads/optio/task-${taskId}$" | grep "^worktree " | cut -d" " -f2-); do`,
+        `      git worktree remove --force "$wt_path" 2>/dev/null || true`,
+        `    done`,
+        `    git worktree prune`,
+        `    git branch -D optio/task-${taskId} 2>/dev/null || true`,
+        `    git worktree add /workspace/tasks/${taskId} -b optio/task-${taskId} origin/${env.OPTIO_REPO_BRANCH ?? "main"}`,
+        `  fi`,
+        `fi`,
+      ]
+    : [
+        `git worktree remove --force /workspace/tasks/${taskId} 2>/dev/null || true`,
+        `rm -rf /workspace/tasks/${taskId}`,
+        `if [ "\${OPTIO_RESTART_FROM_BRANCH:-}" = "true" ] && git rev-parse --verify origin/optio/task-${taskId} >/dev/null 2>&1; then`,
+        `  echo "[optio] Force-restart: checking out existing PR branch"`,
+        `  for wt_path in $(git worktree list --porcelain | grep -B1 "branch refs/heads/optio/task-${taskId}$" | grep "^worktree " | cut -d" " -f2-); do`,
+        `    git worktree remove --force "$wt_path" 2>/dev/null || true`,
+        `  done`,
+        `  git worktree prune`,
+        `  git branch -D optio/task-${taskId} 2>/dev/null || true`,
+        `  git worktree add /workspace/tasks/${taskId} -b optio/task-${taskId} origin/optio/task-${taskId}`,
+        `else`,
+        `  git branch -D optio/task-${taskId} 2>/dev/null || true`,
+        `  if ! git worktree add /workspace/tasks/${taskId} -b optio/task-${taskId} origin/${env.OPTIO_REPO_BRANCH ?? "main"} 2>/dev/null; then`,
+        `    echo "[optio] Cleaning up stale worktree references..."`,
+        `    git worktree remove --force /workspace/tasks/${taskId}-wt 2>/dev/null || true`,
+        `    for wt_path in $(git worktree list --porcelain | grep -B1 "branch refs/heads/optio/task-${taskId}$" | grep "^worktree " | cut -d" " -f2-); do`,
+        `      git worktree remove --force "$wt_path" 2>/dev/null || true`,
+        `    done`,
+        `    git worktree prune`,
+        `    git branch -D optio/task-${taskId} 2>/dev/null || true`,
+        `    git worktree add /workspace/tasks/${taskId} -b optio/task-${taskId} origin/${env.OPTIO_REPO_BRANCH ?? "main"}`,
+        `  fi`,
+        `fi`,
+      ];
 
   const script = [
     "set -e",
-    // Decode env vars from base64 JSON and export them
     `eval $(echo '${envB64}' | base64 -d | python3 -c "`,
     `import json, sys, shlex`,
     `env = json.load(sys.stdin)`,
     `for k, v in env.items():`,
     `    print(f'export {k}={shlex.quote(v)}')`,
     `")`,
-    // Wait for the repo-init script to finish cloning
     `echo "[optio] Waiting for repo to be ready..."`,
     `for i in $(seq 1 120); do [ -f /workspace/.ready ] && break; sleep 1; done`,
     `[ -f /workspace/.ready ] || { echo "[optio] ERROR: repo not ready after 120s"; exit 1; }`,
     `echo "[optio] Repo ready"`,
-    // Check if the environment has been set up before
     `ENV_FRESH="true"`,
     `[ -f /home/agent/.optio-env-ready ] && ENV_FRESH="false"`,
     `export ENV_FRESH`,
     `if [ "$ENV_FRESH" = "true" ]; then echo "[optio] Fresh environment — tools may need to be installed"; else echo "[optio] Warm environment — tools from previous tasks should be available"; fi`,
-    // Create worktree — either from the PR branch (force-restart) or fresh from main
-    // Use flock to serialize git operations in the shared /workspace/repo directory —
-    // concurrent execs doing fetch/checkout/reset will corrupt each other without this.
     `echo "[optio] Acquiring repo lock..."`,
     `exec 9>/workspace/.repo-lock`,
     `flock 9`,
@@ -269,45 +371,12 @@ export async function execTaskInRepoPod(
     `git fetch origin`,
     `git checkout ${env.OPTIO_REPO_BRANCH ?? "main"} 2>/dev/null || true`,
     `git reset --hard origin/${env.OPTIO_REPO_BRANCH ?? "main"}`,
-    `git worktree remove --force /workspace/tasks/${taskId} 2>/dev/null || true`,
-    `rm -rf /workspace/tasks/${taskId}`,
-    // Force-restart: reuse the existing PR branch instead of creating fresh from main
-    `if [ "\${OPTIO_RESTART_FROM_BRANCH:-}" = "true" ] && git rev-parse --verify origin/optio/task-${taskId} >/dev/null 2>&1; then`,
-    `  echo "[optio] Force-restart: checking out existing PR branch"`,
-    // Clean up any worktrees holding the branch (Claude Code creates its own in .claude/worktrees/)
-    `  for wt_path in $(git worktree list --porcelain | grep -B1 "branch refs/heads/optio/task-${taskId}$" | grep "^worktree " | cut -d" " -f2-); do`,
-    `    git worktree remove --force "$wt_path" 2>/dev/null || true`,
-    `  done`,
-    `  git worktree prune`,
-    `  git branch -D optio/task-${taskId} 2>/dev/null || true`,
-    `  git worktree add /workspace/tasks/${taskId} -b optio/task-${taskId} origin/optio/task-${taskId}`,
-    `else`,
-    `  git branch -D optio/task-${taskId} 2>/dev/null || true`,
-    // Try creating fresh worktree; if branch already exists (Claude Code may create
-    // extra worktrees like -wt that hold the branch), clean up stale refs and retry
-    `  if ! git worktree add /workspace/tasks/${taskId} -b optio/task-${taskId} origin/${env.OPTIO_REPO_BRANCH ?? "main"} 2>/dev/null; then`,
-    `    echo "[optio] Cleaning up stale worktree references..."`,
-    `    git worktree remove --force /workspace/tasks/${taskId}-wt 2>/dev/null || true`,
-    `    for wt_path in $(git worktree list --porcelain | grep -B1 "branch refs/heads/optio/task-${taskId}$" | grep "^worktree " | cut -d" " -f2-); do`,
-    `      git worktree remove --force "$wt_path" 2>/dev/null || true`,
-    `    done`,
-    `    git worktree prune`,
-    `    git branch -D optio/task-${taskId} 2>/dev/null || true`,
-    `    git worktree add /workspace/tasks/${taskId} -b optio/task-${taskId} origin/${env.OPTIO_REPO_BRANCH ?? "main"}`,
-    `  fi`,
-    `fi`,
-    // Release the repo lock — worktree is created, safe to run in parallel from here
+    ...worktreeSetup,
     `flock -u 9`,
     `exec 9>&-`,
     `cd /workspace/tasks/${taskId}`,
-    // Write a run token so the cleanup trap can verify ownership — if a retry
-    // creates a new worktree before this run's trap fires, the trap will see
-    // a different token and skip cleanup (preventing it from deleting the retry's worktree)
     `echo "${runToken}" > /workspace/tasks/${taskId}/.optio-run-token`,
     `export OPTIO_TASK_ID="${taskId}"`,
-    // Write setup files if provided
-    // Paths starting with / are absolute; relative paths are within the worktree
-    // Use /home/agent instead of /opt/optio for user-writable paths
     `if [ -n "\${OPTIO_SETUP_FILES:-}" ]; then`,
     `  echo "[optio] Writing setup files..."`,
     `  WORKTREE_DIR=$(pwd)`,
@@ -317,7 +386,6 @@ export async function execTaskInRepoPod(
     `files = json.load(sys.stdin)`,
     `for f in files:`,
     `    p = f['path']`,
-    `    # Remap /opt/optio/ to /home/agent/optio/ (writable by agent user)`,
     `    if p.startswith('/opt/optio/'):`,
     `        p = '/home/agent/optio/' + p[len('/opt/optio/'):]`,
     `    elif not p.startswith('/'):`,
@@ -330,16 +398,12 @@ export async function execTaskInRepoPod(
     `    print(f'  wrote {p}')`,
     `"`,
     `fi`,
-    // Set up cleanup trap before running the agent — ensures worktree is removed
-    // even if the agent exits non-zero (set -e would otherwise kill the script).
-    // Only clean up if our run token still matches — a retry may have already
-    // replaced the worktree with a new run, and we must not delete it.
-    `trap 'CURRENT_TOKEN=$(cat /workspace/tasks/${taskId}/.optio-run-token 2>/dev/null); if [ "$CURRENT_TOKEN" = "${runToken}" ]; then cd /workspace/repo; git worktree remove --force /workspace/tasks/${taskId} 2>/dev/null || true; git worktree remove --force /workspace/tasks/${taskId}-wt 2>/dev/null || true; git worktree prune 2>/dev/null || true; git branch -D optio/task-${taskId} 2>/dev/null || true; fi' EXIT`,
+    // EXIT trap: preserve the worktree — cleanup is handled by the cleanup worker
+    // based on task state. Only clean up Claude Code's internal worktrees (-wt suffix).
+    `trap 'cd /workspace/repo 2>/dev/null; git worktree remove --force /workspace/tasks/${taskId}-wt 2>/dev/null || true; git worktree prune 2>/dev/null || true' EXIT`,
     `set +e`,
-    // Run the agent command
     ...agentCommand,
     `AGENT_EXIT=$?`,
-    // Mark environment as set up for future tasks (only on success)
     `[ $AGENT_EXIT -eq 0 ] && touch /home/agent/.optio-env-ready`,
     `exit $AGENT_EXIT`,
   ].join("\n");
@@ -361,10 +425,21 @@ export async function releaseRepoPodTask(podId: string): Promise<void> {
 }
 
 /**
- * Clean up idle repo pods (no active tasks and idle for longer than the timeout).
+ * Update worktree state for a task.
+ */
+export async function updateWorktreeState(taskId: string, worktreeState: string): Promise<void> {
+  await db
+    .update(tasks)
+    .set({ worktreeState, updatedAt: new Date() })
+    .where(eq(tasks.id, taskId));
+}
+
+/**
+ * Clean up idle repo pods. With multi-pod support, scale down higher-index pods first.
  */
 export async function cleanupIdleRepoPods(): Promise<number> {
   const cutoff = new Date(Date.now() - IDLE_TIMEOUT_MS);
+
   const idlePods = await db
     .select()
     .from(repoPods)
@@ -379,16 +454,32 @@ export async function cleanupIdleRepoPods(): Promise<number> {
   const rt = getRuntime();
   let cleaned = 0;
 
+  // Group by repoUrl to implement scale-down logic
+  const podsByRepo = new Map<string, (typeof idlePods)[number][]>();
   for (const pod of idlePods) {
-    try {
-      if (pod.podName) {
-        await rt.destroy({ id: pod.podId ?? pod.podName, name: pod.podName });
+    const existing = podsByRepo.get(pod.repoUrl) ?? [];
+    existing.push(pod);
+    podsByRepo.set(pod.repoUrl, existing);
+  }
+
+  for (const [, repoIdlePods] of podsByRepo) {
+    // Sort by instance index descending (remove higher instances first)
+    const sorted = repoIdlePods.sort((a, b) => b.instanceIndex - a.instanceIndex);
+
+    for (const pod of sorted) {
+      try {
+        if (pod.podName) {
+          await rt.destroy({ id: pod.podId ?? pod.podName, name: pod.podName });
+        }
+        await db.delete(repoPods).where(eq(repoPods.id, pod.id));
+        logger.info(
+          { repoUrl: pod.repoUrl, podName: pod.podName, instanceIndex: pod.instanceIndex },
+          "Cleaned up idle repo pod",
+        );
+        cleaned++;
+      } catch (err) {
+        logger.warn({ err, podId: pod.id }, "Failed to cleanup repo pod");
       }
-      await db.delete(repoPods).where(eq(repoPods.id, pod.id));
-      logger.info({ repoUrl: pod.repoUrl, podName: pod.podName }, "Cleaned up idle repo pod");
-      cleaned++;
-    } catch (err) {
-      logger.warn({ err, podId: pod.id }, "Failed to cleanup repo pod");
     }
   }
 
@@ -400,4 +491,14 @@ export async function cleanupIdleRepoPods(): Promise<number> {
  */
 export async function listRepoPods(): Promise<RepoPod[]> {
   return db.select().from(repoPods) as Promise<RepoPod[]>;
+}
+
+/**
+ * List all repo pods for a specific repo URL.
+ */
+export async function listRepoPodsForRepo(repoUrl: string): Promise<RepoPod[]> {
+  return db
+    .select()
+    .from(repoPods)
+    .where(eq(repoPods.repoUrl, repoUrl)) as Promise<RepoPod[]>;
 }

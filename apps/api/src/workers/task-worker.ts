@@ -85,6 +85,11 @@ export function startTaskWorker() {
         const { getRepoByUrl } = await import("../services/repo-service.js");
         const repoConfig = await getRepoByUrl(currentTask.repoUrl);
 
+        // Compute effective concurrency: maxAgentsPerPod * maxPodInstances
+        const maxAgentsPerPod = repoConfig?.maxAgentsPerPod ?? 2;
+        const maxPodInstances = repoConfig?.maxPodInstances ?? 1;
+        const effectiveRepoConcurrency = maxAgentsPerPod * maxPodInstances;
+
         const claimed = await withClaimLock(async () => {
           const globalMax = parseInt(process.env.OPTIO_MAX_CONCURRENT ?? "5", 10);
 
@@ -98,21 +103,22 @@ export function startTaskWorker() {
             return null;
           }
 
-          // Per-repo concurrency check
-          if (repoConfig?.maxConcurrentTasks) {
-            const [{ count: repoCount }] = await db
-              .select({ count: sql<number>`count(*)` })
-              .from(tasks)
-              .where(
-                sql`${tasks.repoUrl} = ${currentTask.repoUrl} AND ${tasks.state} IN ('provisioning', 'running')`,
-              );
-            if (Number(repoCount) >= repoConfig.maxConcurrentTasks) {
-              log.info(
-                { repoActiveCount: repoCount, max: repoConfig.maxConcurrentTasks },
-                "Repo concurrency saturated, re-scheduling",
-              );
-              return null;
-            }
+          // Per-repo concurrency check using effective concurrency (pods * agents)
+          const repoMax = repoConfig?.maxConcurrentTasks
+            ? Math.max(repoConfig.maxConcurrentTasks, effectiveRepoConcurrency)
+            : effectiveRepoConcurrency;
+          const [{ count: repoCount }] = await db
+            .select({ count: sql<number>`count(*)` })
+            .from(tasks)
+            .where(
+              sql`${tasks.repoUrl} = ${currentTask.repoUrl} AND ${tasks.state} IN ('provisioning', 'running')`,
+            );
+          if (Number(repoCount) >= repoMax) {
+            log.info(
+              { repoActiveCount: repoCount, max: repoMax },
+              "Repo concurrency saturated, re-scheduling",
+            );
+            return null;
           }
 
           // Claim — atomic conditional update (queued → provisioning)
@@ -230,11 +236,22 @@ export function startTaskWorker() {
           }
         }
 
-        // Get or create a repo pod for this repo
+        // Get or create a repo pod (with multi-pod scheduling)
         log.info("Getting repo pod");
-        const pod = await repoPool.getOrCreateRepoPod(task.repoUrl, task.repoBranch, allEnv);
+        const isRetry = (task.retryCount ?? 0) > 0;
+        const pod = await repoPool.getOrCreateRepoPod(
+          task.repoUrl,
+          task.repoBranch,
+          allEnv,
+          undefined,
+          {
+            preferredPodId: isRetry ? ((task as any).lastPodId ?? undefined) : undefined,
+            maxAgentsPerPod,
+            maxPodInstances,
+          },
+        );
         repoPodId = pod.id;
-        log.info({ podName: pod.podName }, "Repo pod ready");
+        log.info({ podName: pod.podName, instanceIndex: pod.instanceIndex }, "Repo pod ready");
 
         await taskService.updateTaskContainer(taskId, pod.podName ?? pod.podId ?? pod.id);
         await taskService.transitionTask(taskId, TaskState.RUNNING, "worktree_created");
@@ -251,7 +268,11 @@ export function startTaskWorker() {
         });
 
         // Execute the task in the repo pod via worktree
-        const execSession = await repoPool.execTaskInRepoPod(pod, task.id, agentCommand, allEnv);
+        // On retry to the same pod, reset existing worktree instead of recreating
+        const shouldResetWorktree = isRetry && pod.id === (task as any).lastPodId;
+        const execSession = await repoPool.execTaskInRepoPod(pod, task.id, agentCommand, allEnv, {
+          resetWorktree: shouldResetWorktree,
+        });
 
         // Stream stdout with structured parsing
         let allLogs = "";
@@ -395,8 +416,7 @@ export function startTaskWorker() {
 
         if (!sessionId && !isReviewTask) {
           // Agent never started — no session ID means no agent output was produced.
-          // Check this FIRST: a stale prUrl from a previous run would otherwise
-          // cause a ghost-completion to be treated as pr_opened.
+          await repoPool.updateWorktreeState(taskId, "dirty");
           await taskService.transitionTask(
             taskId,
             TaskState.FAILED,
@@ -406,10 +426,11 @@ export function startTaskWorker() {
           log.warn("Agent exited without output — no session ID captured");
         } else if (detectedPrUrl && !isReviewTask) {
           // PR exists — go to pr_opened regardless of exit code.
-          // The PR watcher will track CI status and handle merge/failure from here.
           if (detectedPrUrl !== taskAfterExec?.prUrl) {
             await taskService.updateTaskPr(taskId, detectedPrUrl);
           }
+          // Preserve worktree for resume (pr_opened state needs it)
+          await repoPool.updateWorktreeState(taskId, "preserved");
           await taskService.transitionTask(
             taskId,
             TaskState.PR_OPENED,
@@ -418,6 +439,7 @@ export function startTaskWorker() {
           );
           log.info({ prUrl: detectedPrUrl }, "PR opened");
         } else if (result.success || isReviewTask) {
+          await repoPool.updateWorktreeState(taskId, "removed");
           await taskService.transitionTask(
             taskId,
             TaskState.COMPLETED,
@@ -426,6 +448,7 @@ export function startTaskWorker() {
           );
           log.info("Task completed");
         } else {
+          await repoPool.updateWorktreeState(taskId, "dirty");
           await taskService.transitionTask(taskId, TaskState.FAILED, "agent_failure", result.error);
           log.warn({ error: result.error }, "Task failed");
 
@@ -463,6 +486,7 @@ export function startTaskWorker() {
           // A force-redo may have reset the task to queued while we were running.
           const currentTask = await taskService.getTask(taskId);
           if (currentTask && ["provisioning", "running"].includes(currentTask.state)) {
+            await repoPool.updateWorktreeState(taskId, "dirty").catch(() => {});
             await taskService.updateTaskResult(taskId, undefined, String(err));
             await taskService.transitionTask(taskId, TaskState.FAILED, "worker_error", String(err));
           } else {

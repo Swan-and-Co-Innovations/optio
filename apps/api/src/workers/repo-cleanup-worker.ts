@@ -2,7 +2,7 @@ import { Queue, Worker } from "bullmq";
 import { eq, sql } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { repoPods, podHealthEvents, tasks, taskEvents } from "../db/schema.js";
-import { cleanupIdleRepoPods } from "../services/repo-pool-service.js";
+import { cleanupIdleRepoPods, updateWorktreeState } from "../services/repo-pool-service.js";
 import { getRuntime } from "../services/container-service.js";
 import { TaskState } from "@optio/shared";
 import * as taskService from "../services/task-service.js";

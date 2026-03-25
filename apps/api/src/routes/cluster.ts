@@ -211,26 +211,33 @@ export async function clusterRoutes(app: FastifyInstance) {
 
       const queuedMap = new Map(queuedCounts.map((r) => [r.repoUrl, r.count]));
 
-      // Max concurrent tasks per repo (from repos config)
+      // Scaling config per repo
       const repoConfigs =
         repoUrls.length > 0
           ? await db
               .select({
                 repoUrl: repos.repoUrl,
                 maxConcurrentTasks: repos.maxConcurrentTasks,
+                maxPodInstances: repos.maxPodInstances,
+                maxAgentsPerPod: repos.maxAgentsPerPod,
               })
               .from(repos)
               .where(inArray(repos.repoUrl, repoUrls))
           : [];
 
-      const maxConcurrentMap = new Map(repoConfigs.map((r) => [r.repoUrl, r.maxConcurrentTasks]));
+      const repoConfigMap = new Map(repoConfigs.map((r) => [r.repoUrl, r]));
 
-      // Enrich repo pod records with task indicators
-      const enrichedRepoPods = repoPodRecords.map((rp) => ({
-        ...rp,
-        queuedTaskCount: queuedMap.get(rp.repoUrl) ?? 0,
-        maxConcurrentTasks: maxConcurrentMap.get(rp.repoUrl) ?? 2,
-      }));
+      // Enrich repo pod records with task indicators and scaling config
+      const enrichedRepoPods = repoPodRecords.map((rp) => {
+        const config = repoConfigMap.get(rp.repoUrl);
+        return {
+          ...rp,
+          queuedTaskCount: queuedMap.get(rp.repoUrl) ?? 0,
+          maxConcurrentTasks: config?.maxConcurrentTasks ?? 2,
+          maxPodInstances: config?.maxPodInstances ?? 1,
+          maxAgentsPerPod: config?.maxAgentsPerPod ?? 2,
+        };
+      });
 
       reply.send({
         nodes,
