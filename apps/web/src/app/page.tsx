@@ -926,7 +926,7 @@ function UsageMeter({
 
 function CapacityIndicator({ repoPod }: { repoPod: any }) {
   const active = repoPod.activeTaskCount ?? 0;
-  const max = repoPod.maxConcurrentTasks ?? 2;
+  const max = repoPod.maxAgentsPerPod ?? repoPod.maxConcurrentTasks ?? 2;
   const pct = max > 0 ? Math.min((active / max) * 100, 100) : 0;
   const color = pct >= 100 ? "bg-error" : pct >= 50 ? "bg-warning" : "bg-success";
 

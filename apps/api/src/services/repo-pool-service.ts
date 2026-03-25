@@ -428,10 +428,7 @@ export async function releaseRepoPodTask(podId: string): Promise<void> {
  * Update worktree state for a task.
  */
 export async function updateWorktreeState(taskId: string, worktreeState: string): Promise<void> {
-  await db
-    .update(tasks)
-    .set({ worktreeState, updatedAt: new Date() })
-    .where(eq(tasks.id, taskId));
+  await db.update(tasks).set({ worktreeState, updatedAt: new Date() }).where(eq(tasks.id, taskId));
 }
 
 /**
@@ -497,8 +494,5 @@ export async function listRepoPods(): Promise<RepoPod[]> {
  * List all repo pods for a specific repo URL.
  */
 export async function listRepoPodsForRepo(repoUrl: string): Promise<RepoPod[]> {
-  return db
-    .select()
-    .from(repoPods)
-    .where(eq(repoPods.repoUrl, repoUrl)) as Promise<RepoPod[]>;
+  return db.select().from(repoPods).where(eq(repoPods.repoUrl, repoUrl)) as Promise<RepoPod[]>;
 }
