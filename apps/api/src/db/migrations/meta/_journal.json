@@ -134,6 +134,13 @@
       "when": 1774540800000,
       "tag": "0018_scheduled_tasks",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1774627200000,
+      "tag": "0019_slack_integration",
+      "breakpoints": true
     }
   ]
 }

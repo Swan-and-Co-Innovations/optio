@@ -32,6 +32,12 @@ const updateRepoSchema = z.object({
   reviewPromptTemplate: z.string().nullable().optional(),
   testCommand: z.string().optional(),
   reviewModel: z.string().optional(),
+  slackWebhookUrl: z.string().nullable().optional(),
+  slackChannel: z.string().nullable().optional(),
+  slackNotifyOn: z
+    .array(z.enum(["completed", "failed", "needs_attention", "pr_opened"]))
+    .optional(),
+  slackEnabled: z.boolean().optional(),
 });
 
 export async function repoRoutes(app: FastifyInstance) {

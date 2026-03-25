@@ -268,6 +268,11 @@ export async function transitionTask(
     }).catch((err) => logger.warn({ err, taskId: id }, "Failed to enqueue webhook event"));
   }
 
+  // Send Slack notification (fire-and-forget)
+  sendSlackNotificationForTask(updated[0], toState).catch((err) =>
+    logger.warn({ err, taskId: id }, "Failed to send Slack notification"),
+  );
+
   return updated[0];
 }
 
@@ -498,4 +503,25 @@ export async function getTaskEvents(taskId: string) {
       ? { id: row.userId, displayName: row.userName!, avatarUrl: row.userAvatar }
       : undefined,
   }));
+}
+
+/**
+ * Resolve repo config and send a Slack notification for a task state change.
+ */
+async function sendSlackNotificationForTask(
+  task: {
+    id: string;
+    title: string;
+    repoUrl: string;
+    state: string;
+    prUrl?: string | null;
+    costUsd?: string | null;
+    errorMessage?: string | null;
+  },
+  toState: TaskState,
+): Promise<void> {
+  const { notifySlackOnTransition } = await import("./slack-service.js");
+  const { getRepoByUrl } = await import("./repo-service.js");
+  const repoConfig = await getRepoByUrl(task.repoUrl);
+  await notifySlackOnTransition({ ...task, state: toState }, toState, repoConfig);
 }

@@ -30,6 +30,10 @@ export interface RepoRecord {
   reviewPromptTemplate: string | null;
   testCommand: string | null;
   reviewModel: string | null;
+  slackWebhookUrl: string | null;
+  slackChannel: string | null;
+  slackNotifyOn: string[] | null;
+  slackEnabled: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -101,6 +105,10 @@ export async function updateRepo(
     reviewPromptTemplate?: string | null;
     testCommand?: string;
     reviewModel?: string;
+    slackWebhookUrl?: string | null;
+    slackChannel?: string | null;
+    slackNotifyOn?: string[];
+    slackEnabled?: boolean;
   },
 ): Promise<RepoRecord | null> {
   const [repo] = await db

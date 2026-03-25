@@ -155,6 +155,10 @@ export const repos = pgTable("repos", {
   reviewPromptTemplate: text("review_prompt_template"), // null = use default
   testCommand: text("test_command"), // "npm test", "cargo test", etc.
   reviewModel: text("review_model").default("sonnet"), // can use cheaper model for reviews
+  slackWebhookUrl: text("slack_webhook_url"), // Slack incoming webhook URL
+  slackChannel: text("slack_channel"), // override channel (optional)
+  slackNotifyOn: jsonb("slack_notify_on").$type<string[]>(), // e.g. ["completed","failed","pr_opened","needs_attention"]
+  slackEnabled: boolean("slack_enabled").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
