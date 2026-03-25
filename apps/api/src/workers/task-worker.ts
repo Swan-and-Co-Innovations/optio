@@ -381,11 +381,14 @@ export function startTaskWorker() {
         const result = adapter.parseResult(inferredExitCode, allLogs);
         await taskService.updateTaskResult(taskId, result.summary, result.error);
 
-        if (result.costUsd != null) {
-          await db
-            .update(tasks)
-            .set({ costUsd: String(result.costUsd) })
-            .where(eq(tasks.id, taskId));
+        // Persist cost, token usage, and model data
+        const costFields: Record<string, unknown> = {};
+        if (result.costUsd != null) costFields.costUsd = String(result.costUsd);
+        if (result.inputTokens != null) costFields.inputTokens = result.inputTokens;
+        if (result.outputTokens != null) costFields.outputTokens = result.outputTokens;
+        if (result.model) costFields.modelUsed = result.model;
+        if (Object.keys(costFields).length > 0) {
+          await db.update(tasks).set(costFields).where(eq(tasks.id, taskId));
         }
 
         // Pick the best PR URL.  Priority:

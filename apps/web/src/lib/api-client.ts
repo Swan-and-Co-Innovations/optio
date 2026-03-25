@@ -355,9 +355,43 @@ export const api = {
         prevPeriodCost: string;
         days: number;
       };
+      forecast: {
+        dailyAvgCost: string;
+        monthCostSoFar: string;
+        forecastedMonthTotal: string;
+        daysRemaining: number;
+      };
       dailyCosts: Array<{ date: string; cost: number; taskCount: number }>;
       costByRepo: Array<{ repoUrl: string; totalCost: number; taskCount: number }>;
       costByType: Array<{ taskType: string; totalCost: number; taskCount: number }>;
+      costByModel: Array<{
+        model: string;
+        totalCost: number;
+        taskCount: number;
+        successRate: number;
+        avgCost: number;
+        totalInputTokens: number;
+        totalOutputTokens: number;
+      }>;
+      anomalies: Array<{
+        id: string;
+        title: string;
+        repoUrl: string;
+        taskType: string;
+        state: string;
+        costUsd: string;
+        modelUsed: string;
+        repoAvgCost: number;
+        costRatio: number;
+        createdAt: string;
+      }>;
+      modelSuggestions: Array<{
+        repoUrl: string;
+        currentModel: string;
+        taskCount: number;
+        avgCost: number;
+        cheaperModelAvgCost: number;
+      }>;
       topTasks: Array<{
         id: string;
         title: string;
@@ -365,6 +399,9 @@ export const api = {
         taskType: string;
         state: string;
         costUsd: string;
+        inputTokens: number;
+        outputTokens: number;
+        modelUsed: string;
         createdAt: string;
       }>;
     }>(`/api/analytics/costs${query ? `?${query}` : ""}`);

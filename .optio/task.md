@@ -1,28 +1,27 @@
-# fix: Turborepo silently drops web app during pnpm dev
+# feat: Cost optimization insights and forecasting
 
-fix: Turborepo silently drops web app during pnpm dev
+feat: Cost optimization insights and forecasting
 
 ## Problem
 
-Running `pnpm dev` (which calls `turbo dev`) sometimes only starts the API server — the Next.js web app never launches. No error is shown. The web app works fine when started manually with `cd apps/web && npx next dev`.
+Cost tracking shows totals but doesn't help users optimize. No way to compare models, detect anomalies, or forecast spending.
 
-## Observed Behavior
+## Features
 
-- `turbo dev` output only shows `@optio/api:dev` logs
-- No `@optio/web:dev` output at all
-- API healthy on :4000, web unreachable on :3100
-- Seems intermittent — may relate to the `taskQueue.obliterate()` call blocking the event loop early in API startup
+- **Per-model cost comparison**: Show cost breakdown by model (Opus vs Sonnet vs Haiku) with success rates
+- **"Try cheaper model" suggestions**: If a task succeeded with Opus, suggest trying Sonnet next time
+- **Cost anomaly alerts**: Flag tasks that cost 3x+ the repo average
+- **Forecasting**: "At current rate, you'll spend $X this month"
+- **Per-task cost breakdown**: Input tokens, output tokens, thinking tokens (where available)
+- **Token tracking**: Store `inputTokens`, `outputTokens` on tasks for detailed analysis
 
-## Workaround
+## Acceptance Criteria
 
-Start web manually: `cd apps/web && npx next dev --port 3100`
-
-## Investigation Needed
-
-- Check if turbo is timing out on the web task
-- Check if the API's startup is blocking turbo's process management
-- May need to split API and web into separate `pnpm dev:api` and `pnpm dev:web` scripts
+- [ ] Cost breakdown by model on analytics page
+- [ ] Anomaly detection with visual indicators
+- [ ] Monthly forecast based on rolling average
+- [ ] Token-level cost breakdown per task
 
 ---
 
-_Optio Task ID: 27c499f3-58d1-4957-b6dc-3652a63caf91_
+_Optio Task ID: 428ee0d9-6ba2-482e-aed6-2b6b74b44baa_

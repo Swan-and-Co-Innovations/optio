@@ -83,27 +83,50 @@ export class ClaudeCodeAdapter implements AgentAdapter {
     const prMatch = logs.match(/https:\/\/github\.com\/[^\s"]+\/pull\/\d+/);
     const costMatch = logs.match(/"total_cost_usd":\s*([\d.]+)/);
 
-    // Extract the actual error message from Claude's NDJSON result event
+    // Extract error, token usage, and model from Claude's NDJSON events
     let error: string | undefined;
-    if (exitCode !== 0) {
-      for (const line of logs.split("\n")) {
-        try {
-          const event = JSON.parse(line);
-          if (event.type === "result" && event.is_error && event.result) {
-            error = event.result;
-            break;
-          }
-        } catch {
-          // Not JSON, skip
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
+    let model: string | undefined;
+
+    for (const line of logs.split("\n")) {
+      try {
+        const event = JSON.parse(line);
+
+        // Extract model from system init event
+        if (event.type === "system" && event.subtype === "init" && event.model && !model) {
+          model = event.model;
         }
+
+        // Accumulate token usage from assistant messages
+        if (event.type === "assistant" && event.message?.usage) {
+          totalInputTokens += event.message.usage.input_tokens || 0;
+          totalOutputTokens += event.message.usage.output_tokens || 0;
+          if (!model && event.message.model) {
+            model = event.message.model;
+          }
+        }
+
+        // Extract error from result event
+        if (exitCode !== 0 && event.type === "result" && event.is_error && event.result) {
+          error = event.result;
+        }
+      } catch {
+        // Not JSON, skip
       }
-      error = error || `Exit code: ${exitCode}`;
+    }
+
+    if (exitCode !== 0 && !error) {
+      error = `Exit code: ${exitCode}`;
     }
 
     return {
       success: exitCode === 0,
       prUrl: prMatch?.[0],
       costUsd: costMatch ? parseFloat(costMatch[1]) : undefined,
+      inputTokens: totalInputTokens > 0 ? totalInputTokens : undefined,
+      outputTokens: totalOutputTokens > 0 ? totalOutputTokens : undefined,
+      model,
       summary:
         exitCode === 0 ? "Agent completed successfully" : `Agent exited with code ${exitCode}`,
       error,

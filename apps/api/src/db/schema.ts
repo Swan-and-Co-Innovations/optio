@@ -44,6 +44,9 @@ export const tasks = pgTable(
     prReviewComments: text("pr_review_comments"), // latest review comments (for resume)
     resultSummary: text("result_summary"),
     costUsd: text("cost_usd"), // stored as string to avoid float precision issues
+    inputTokens: integer("input_tokens"), // total input tokens used
+    outputTokens: integer("output_tokens"), // total output tokens used
+    modelUsed: text("model_used"), // model ID used (e.g., "claude-sonnet-4-20250514")
     errorMessage: text("error_message"),
     ticketSource: text("ticket_source"),
     ticketExternalId: text("ticket_external_id"),

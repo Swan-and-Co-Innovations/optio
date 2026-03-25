@@ -120,6 +120,13 @@
       "when": 1774368000000,
       "tag": "0016_add_query_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1774454400000,
+      "tag": "0017_cost_optimization_tokens",
+      "breakpoints": true
     }
   ]
 }
