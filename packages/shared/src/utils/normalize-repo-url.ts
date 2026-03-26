@@ -42,17 +42,8 @@ export function normalizeRepoUrl(url: string): string {
   u = u.replace(/\.git$/, "");
   u = u.replace(/\/+$/, "");
 
-  // Lowercase the host portion only (preserve case of owner/repo for display,
-  // but GitHub is case-insensitive so we lowercase the whole thing for matching)
-  try {
-    const parsed = new URL(u);
-    parsed.hostname = parsed.hostname.toLowerCase();
-    // Reconstruct without trailing slash
-    u = `${parsed.protocol}//${parsed.hostname}${parsed.pathname}`;
-  } catch {
-    // If URL parsing fails, just lowercase the whole thing
-    u = u.toLowerCase();
-  }
+  // GitHub is case-insensitive for owner/repo, so lowercase everything for matching
+  u = u.toLowerCase();
 
   // Strip trailing slash again (URL parsing may re-add it)
   u = u.replace(/\/+$/, "");

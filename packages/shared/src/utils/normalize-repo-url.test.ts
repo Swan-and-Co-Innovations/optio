@@ -18,6 +18,8 @@ describe("normalizeRepoUrl", () => {
     ["github.com/foo/bar", "bare host"],
     ["github.com/foo/bar.git", "bare host with .git"],
     ["HTTPS://GitHub.COM/foo/bar", "mixed case host"],
+    ["https://github.com/Foo/Bar", "mixed case owner/repo"],
+    ["git@github.com:FOO/BAR.git", "SSH shorthand with upper case path"],
   ])("normalizes %s (%s)", (input) => {
     expect(normalizeRepoUrl(input)).toBe(canonical);
   });
