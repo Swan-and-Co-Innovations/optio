@@ -61,9 +61,17 @@ export async function repoRoutes(app: FastifyInstance) {
 
   app.post("/api/repos", async (req, reply) => {
     const body = createRepoSchema.parse(req.body);
+    const workspaceId = req.user?.workspaceId ?? null;
+
+    // Check for duplicate
+    const existing = await repoService.getRepoByUrl(body.repoUrl, workspaceId);
+    if (existing) {
+      return reply.status(409).send({ error: "This repository has already been added" });
+    }
+
     const repo = await repoService.createRepo({
       ...body,
-      workspaceId: req.user?.workspaceId ?? null,
+      workspaceId,
     });
 
     // Auto-detect image preset and test command
