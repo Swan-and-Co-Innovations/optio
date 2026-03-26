@@ -49,6 +49,23 @@ process.on("uncaughtException", (err) => {
   process.exit(1);
 });
 
+async function checkMetricsServer() {
+  try {
+    const { execFile } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    const execFileAsync = promisify(execFile);
+    await execFileAsync("kubectl", ["get", "--raw", "/apis/metrics.k8s.io"], {
+      timeout: 5000,
+    });
+    logger.info("metrics-server detected");
+  } catch {
+    logger.warn(
+      "metrics-server not detected — resource utilization will be unavailable. " +
+        "Install with: kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml",
+    );
+  }
+}
+
 async function main() {
   // Run database migrations before anything else
   const { migrate } = await import("drizzle-orm/postgres-js/migrator");
@@ -95,6 +112,9 @@ async function main() {
 
   const scheduleWorker = startScheduleWorker();
   logger.info("Schedule worker started");
+
+  // Check if metrics-server is available
+  checkMetricsServer().catch(() => {});
 
   // Re-enqueue any tasks orphaned by a Redis restart.
   // The heavy obliterate() call runs last to minimize startup impact.

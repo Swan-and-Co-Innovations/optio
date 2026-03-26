@@ -110,8 +110,15 @@ export default function OverviewPage() {
     sevenDayOpus?: { utilization: number | null; resetsAt: string | null };
   } | null>(null);
   const [showMetrics, setShowMetrics] = useState(false);
+  const [metricsAvailable, setMetricsAvailable] = useState<boolean | null>(null);
   const [metricsHistory, setMetricsHistory] = useState<
-    { time: number; cpuPercent: number; memoryPercent: number; pods: number; agents: number }[]
+    {
+      time: number;
+      cpuPercent: number | null;
+      memoryPercent: number | null;
+      pods: number;
+      agents: number;
+    }[]
   >([]);
   const MAX_HISTORY = 60; // 10 minutes at 10s intervals
 
@@ -140,18 +147,19 @@ export default function OverviewPage() {
         setRepoCount(reposRes.repos.length);
         if (clusterRes) {
           setCluster(clusterRes);
+          setMetricsAvailable(clusterRes.metricsAvailable ?? null);
           const node = clusterRes.nodes?.[0];
           if (node) {
             const memPercent =
-              node.memoryUsedGi && node.memoryTotalGi
+              node.memoryUsedGi != null && node.memoryTotalGi
                 ? Math.round((parseFloat(node.memoryUsedGi) / parseFloat(node.memoryTotalGi)) * 100)
-                : 0;
+                : null;
             setMetricsHistory((prev) => {
               const next = [
                 ...prev,
                 {
                   time: Date.now(),
-                  cpuPercent: node.cpuPercent ?? 0,
+                  cpuPercent: node.cpuPercent ?? null,
                   memoryPercent: memPercent,
                   pods: clusterRes.summary?.totalPods ?? 0,
                   agents: clusterRes.summary?.agentPods ?? 0,
@@ -371,7 +379,10 @@ export default function OverviewPage() {
                     {nodes[0].cpu} cores
                   </>
                 ) : (
-                  <>{nodes[0].cpu} cores</>
+                  <>
+                    <span className="font-medium text-text-muted/50">N/A</span> · {nodes[0].cpu}{" "}
+                    cores
+                  </>
                 )}
               </span>
               <span className="flex items-center gap-1">
@@ -382,7 +393,10 @@ export default function OverviewPage() {
                     {nodes[0].memoryTotalGi} Gi
                   </>
                 ) : (
-                  <>{formatK8sResource(nodes[0].memory)}</>
+                  <>
+                    <span className="font-medium text-text-muted/50">N/A</span> ·{" "}
+                    {formatK8sResource(nodes[0].memory)}
+                  </>
                 )}
               </span>
               {totalCost > 0 && (
@@ -409,19 +423,28 @@ export default function OverviewPage() {
 
         {showMetrics && (
           <div className="border-t border-border/30 px-4 py-4">
-            {metricsHistory.length > 1 ? (
+            {metricsAvailable === false ? (
+              <div className="text-xs text-text-muted/50 text-center py-3">
+                metrics-server not detected — CPU and memory charts unavailable.
+                <br />
+                <span className="text-[10px]">
+                  Install with: kubectl apply -f
+                  https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+                </span>
+              </div>
+            ) : metricsHistory.length > 1 ? (
               <>
                 <div className="grid grid-cols-3 gap-6">
                   <MiniChart
                     label="CPU"
-                    data={metricsHistory.map((m) => m.cpuPercent)}
+                    data={metricsHistory.map((m) => m.cpuPercent ?? 0)}
                     suffix="%"
                     color="var(--color-primary)"
                     max={100}
                   />
                   <MiniChart
                     label="Memory"
-                    data={metricsHistory.map((m) => m.memoryPercent)}
+                    data={metricsHistory.map((m) => m.memoryPercent ?? 0)}
                     suffix="%"
                     color="var(--color-info)"
                     max={100}

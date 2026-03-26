@@ -20,33 +20,46 @@ if ! kubectl cluster-info >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "[1/8] Installing dependencies..."
+echo "[1/9] Installing dependencies..."
 pnpm install
 
-echo "[2/8] Creating optio namespace..."
+echo "[2/9] Creating optio namespace..."
 kubectl apply -f k8s/namespace.yaml
 
-echo "[3/8] Pre-pulling infrastructure images..."
+echo "[3/9] Pre-pulling infrastructure images..."
 docker pull postgres:16 -q
 docker pull redis:7-alpine -q
 
-echo "[4/8] Deploying Postgres and Redis to K8s..."
+echo "[4/9] Deploying Postgres and Redis to K8s..."
 kubectl apply -f k8s/infrastructure.yaml
 kubectl wait --namespace optio --for=condition=available deployment/postgres --timeout=120s
 kubectl wait --namespace optio --for=condition=available deployment/redis --timeout=60s
 echo "   Infrastructure ready."
 
-echo "[5/8] Setting up port-forwards..."
+echo "[5/9] Installing metrics-server..."
+if kubectl get deployment metrics-server -n kube-system &>/dev/null; then
+  echo "   metrics-server already installed, skipping"
+else
+  kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml 2>/dev/null || {
+    echo "   ⚠ Failed to install metrics-server (resource utilization will show N/A)"
+  }
+  # Docker Desktop / kind / minikube need --kubelet-insecure-tls
+  kubectl patch deployment metrics-server -n kube-system --type=json \
+    -p '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]' 2>/dev/null || true
+  echo "   metrics-server installed (may take a minute to become ready)"
+fi
+
+echo "[6/9] Setting up port-forwards..."
 pkill -f "kubectl port-forward.*optio" 2>/dev/null || true
 sleep 1
 kubectl port-forward -n optio svc/postgres 5432:5432 &>/dev/null &
 kubectl port-forward -n optio svc/redis 6379:6379 &>/dev/null &
 sleep 2
 
-echo "[6/8] Running database migrations..."
+echo "[7/9] Running database migrations..."
 cd apps/api && npx drizzle-kit migrate && cd "$ROOT_DIR"
 
-echo "[7/8] Creating .env file..."
+echo "[8/9] Creating .env file..."
 if [ ! -f .env ]; then
   cp .env.example .env
   # Ensure auth is disabled for local dev
@@ -60,7 +73,7 @@ else
   echo "   .env already exists, skipping"
 fi
 
-echo "[8/8] Building agent container image..."
+echo "[9/9] Building agent container image..."
 docker build -t optio-agent:latest -f Dockerfile.agent . -q
 echo "   Agent image built (optio-agent:latest)"
 

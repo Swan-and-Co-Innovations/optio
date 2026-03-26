@@ -264,6 +264,7 @@ export async function clusterRoutes(app: FastifyInstance) {
         services,
         events,
         repoPods: enrichedRepoPods,
+        metricsAvailable: nodeMetricsList !== null,
         summary: {
           totalPods: pods.length,
           runningPods: pods.filter((p) => p.status === "Running").length,

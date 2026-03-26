@@ -218,6 +218,7 @@ export const api = {
       services: any[];
       events: any[];
       repoPods: any[];
+      metricsAvailable: boolean;
       summary: {
         totalPods: number;
         runningPods: number;
