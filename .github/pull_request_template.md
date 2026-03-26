@@ -1,21 +1,22 @@
 ## Summary
 
-<!-- What does this PR do? -->
+<!-- What does this PR do and why? -->
 
 ## Changes
 
-<!-- Bullet list of what changed -->
-
--
+<!-- Key changes, organized by area -->
 
 ## Testing
 
 <!-- How was this tested? -->
+- [ ] Tests pass (`pnpm turbo test`)
+- [ ] Typechecks pass (`pnpm turbo typecheck`)
 
-- [ ] `pnpm turbo typecheck` passes
-- [ ] `pnpm turbo test` passes
-- [ ] Tested locally in the web UI
+## Related
+
+<!-- Issues, PRs, docs, etc. -->
+Closes #
 
 ## Screenshots
 
-<!-- If UI changes, add screenshots -->
+<!-- If applicable -->
