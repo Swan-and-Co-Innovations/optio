@@ -9,3 +9,4 @@ coverage/
 coverage-report.md
 apps/api/.env
 /tmp/
+.optio/
