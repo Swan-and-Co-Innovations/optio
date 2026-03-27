@@ -44,6 +44,10 @@ export async function getOrCreateRepoPod(
     maxAgentsPerPod?: number;
     maxPodInstances?: number;
     networkPolicy?: string;
+    cpuRequest?: string | null;
+    cpuLimit?: string | null;
+    memoryRequest?: string | null;
+    memoryLimit?: string | null;
   },
 ): Promise<RepoPod> {
   const repoUrl = normalizeRepoUrl(rawRepoUrl);
@@ -140,6 +144,12 @@ export async function getOrCreateRepoPod(
       imageConfig,
       instanceIndex,
       opts?.networkPolicy,
+      {
+        cpuRequest: opts?.cpuRequest ?? undefined,
+        cpuLimit: opts?.cpuLimit ?? undefined,
+        memoryRequest: opts?.memoryRequest ?? undefined,
+        memoryLimit: opts?.memoryLimit ?? undefined,
+      },
     );
   } catch (err: any) {
     if (err?.message?.includes("unique") || err?.code === "23505") {
@@ -165,6 +175,12 @@ async function createRepoPod(
   imageConfig?: RepoImageConfig,
   instanceIndex = 0,
   networkPolicy?: string,
+  resources?: {
+    cpuRequest?: string;
+    cpuLimit?: string;
+    memoryRequest?: string;
+    memoryLimit?: string;
+  },
 ): Promise<RepoPod> {
   const [record] = await db
     .insert(repoPods)
@@ -227,6 +243,10 @@ spec:
       workDir: "/workspace",
       imagePullPolicy: (process.env.OPTIO_IMAGE_PULL_POLICY as any) ?? "Never",
       volumes,
+      cpuRequest: resources?.cpuRequest,
+      cpuLimit: resources?.cpuLimit,
+      memoryRequest: resources?.memoryRequest,
+      memoryLimit: resources?.memoryLimit,
       labels: {
         "optio.repo-url": repoUrl.replace(/[^a-zA-Z0-9-_.]/g, "_").slice(0, 63),
         "optio.type": "repo-pod",

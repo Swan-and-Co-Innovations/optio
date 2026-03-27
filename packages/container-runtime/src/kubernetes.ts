@@ -51,19 +51,27 @@ export class KubernetesContainerRuntime implements ContainerRuntime {
     });
 
     const resources = new V1ResourceRequirements();
-    if (spec.cpuLimit || spec.memoryLimit) {
+    if (spec.cpuLimit || spec.memoryLimit || spec.cpuRequest || spec.memoryRequest) {
       const limits: Record<string, string> = {};
       const requests: Record<string, string> = {};
       if (spec.cpuLimit) {
         limits["cpu"] = spec.cpuLimit;
+      }
+      if (spec.cpuRequest) {
+        requests["cpu"] = spec.cpuRequest;
+      } else if (spec.cpuLimit) {
         requests["cpu"] = spec.cpuLimit;
       }
       if (spec.memoryLimit) {
         limits["memory"] = spec.memoryLimit;
+      }
+      if (spec.memoryRequest) {
+        requests["memory"] = spec.memoryRequest;
+      } else if (spec.memoryLimit) {
         requests["memory"] = spec.memoryLimit;
       }
-      resources.limits = limits;
-      resources.requests = requests;
+      if (Object.keys(limits).length) resources.limits = limits;
+      if (Object.keys(requests).length) resources.requests = requests;
     }
 
     const container = new V1Container();

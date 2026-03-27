@@ -222,6 +222,10 @@ export const repos = pgTable(
     slackNotifyOn: jsonb("slack_notify_on").$type<string[]>(), // e.g. ["completed","failed","pr_opened","needs_attention"]
     slackEnabled: boolean("slack_enabled").notNull().default(false),
     networkPolicy: text("network_policy").notNull().default("unrestricted"), // "unrestricted" | "restricted"
+    cpuRequest: text("cpu_request"), // e.g. "500m", "1000m", "2000m" — K8s CPU request
+    cpuLimit: text("cpu_limit"), // e.g. "2000m", "4000m" — K8s CPU limit
+    memoryRequest: text("memory_request"), // e.g. "512Mi", "1Gi", "2Gi" — K8s memory request
+    memoryLimit: text("memory_limit"), // e.g. "2Gi", "4Gi" — K8s memory limit
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

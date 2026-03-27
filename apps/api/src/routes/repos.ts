@@ -1,6 +1,13 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import * as repoService from "../services/repo-service.js";
+import {
+  validateCpuQuantity,
+  validateMemoryQuantity,
+  validateRequestLimitPair,
+  parseCpuMillicores,
+  parseMemoryMi,
+} from "@optio/shared";
 
 const createRepoSchema = z.object({
   repoUrl: z.string().min(1),
@@ -40,6 +47,10 @@ const updateRepoSchema = z.object({
     .optional(),
   slackEnabled: z.boolean().optional(),
   networkPolicy: z.enum(["unrestricted", "restricted"]).optional(),
+  cpuRequest: z.string().nullable().optional(),
+  cpuLimit: z.string().nullable().optional(),
+  memoryRequest: z.string().nullable().optional(),
+  memoryLimit: z.string().nullable().optional(),
 });
 
 export async function repoRoutes(app: FastifyInstance) {
@@ -103,6 +114,44 @@ export async function repoRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: "Repo not found" });
     }
     const body = updateRepoSchema.parse(req.body);
+
+    // Validate K8s resource quantities if provided
+    const resourceErrors: string[] = [];
+    if (body.cpuRequest) {
+      const r = validateCpuQuantity(body.cpuRequest);
+      if (!r.valid) resourceErrors.push(r.error!);
+    }
+    if (body.cpuLimit) {
+      const r = validateCpuQuantity(body.cpuLimit);
+      if (!r.valid) resourceErrors.push(r.error!);
+    }
+    if (body.memoryRequest) {
+      const r = validateMemoryQuantity(body.memoryRequest);
+      if (!r.valid) resourceErrors.push(r.error!);
+    }
+    if (body.memoryLimit) {
+      const r = validateMemoryQuantity(body.memoryLimit);
+      if (!r.valid) resourceErrors.push(r.error!);
+    }
+    // Validate request <= limit
+    const cpuPair = validateRequestLimitPair(
+      body.cpuRequest ?? existing.cpuRequest,
+      body.cpuLimit ?? existing.cpuLimit,
+      parseCpuMillicores,
+      "CPU",
+    );
+    if (!cpuPair.valid) resourceErrors.push(cpuPair.error!);
+    const memPair = validateRequestLimitPair(
+      body.memoryRequest ?? existing.memoryRequest,
+      body.memoryLimit ?? existing.memoryLimit,
+      parseMemoryMi,
+      "Memory",
+    );
+    if (!memPair.valid) resourceErrors.push(memPair.error!);
+    if (resourceErrors.length > 0) {
+      return reply.status(400).send({ error: resourceErrors.join(" ") });
+    }
+
     const repo = await repoService.updateRepo(id, body);
     if (!repo) return reply.status(404).send({ error: "Repo not found" });
     reply.send({ repo });

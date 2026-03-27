@@ -57,6 +57,10 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
   const [maxPodInstances, setMaxPodInstances] = useState(1);
   const [maxAgentsPerPod, setMaxAgentsPerPod] = useState(2);
   const [networkPolicy, setNetworkPolicy] = useState("unrestricted");
+  const [cpuRequest, setCpuRequest] = useState("");
+  const [cpuLimit, setCpuLimit] = useState("");
+  const [memoryRequest, setMemoryRequest] = useState("");
+  const [memoryLimit, setMemoryLimit] = useState("");
   const [reviewEnabled, setReviewEnabled] = useState(false);
   const [reviewTrigger, setReviewTrigger] = useState("on_ci_pass");
   const [testCommand, setTestCommand] = useState("");
@@ -100,6 +104,10 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
         setMaxPodInstances(r.maxPodInstances ?? 1);
         setMaxAgentsPerPod(r.maxAgentsPerPod ?? 2);
         setNetworkPolicy(r.networkPolicy ?? "unrestricted");
+        setCpuRequest(r.cpuRequest ?? "");
+        setCpuLimit(r.cpuLimit ?? "");
+        setMemoryRequest(r.memoryRequest ?? "");
+        setMemoryLimit(r.memoryLimit ?? "");
         setDefaultBranch(r.defaultBranch);
         setClaudeModel(r.claudeModel ?? "opus");
         setClaudeContextWindow(r.claudeContextWindow ?? "1m");
@@ -174,6 +182,10 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
         testCommand,
         reviewModel,
         reviewPromptTemplate: showReviewPrompt ? reviewPromptTemplate : null,
+        cpuRequest: cpuRequest || null,
+        cpuLimit: cpuLimit || null,
+        memoryRequest: memoryRequest || null,
+        memoryLimit: memoryLimit || null,
       });
       toast.success("Repo settings saved");
     } catch {
@@ -362,6 +374,66 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
             />
             <p className="text-[10px] text-text-muted/60 mt-1">
               Max concurrent agents (worktrees) in a single pod.
+            </p>
+          </div>
+        </div>
+
+        <h3 className="text-xs font-medium text-text-muted pt-2">Pod Resources</h3>
+        <p className="text-[10px] text-text-muted/60">
+          Configure CPU and memory requests/limits for workspace pods. Leave empty to use cluster
+          defaults. Changes apply to newly created pods only.
+        </p>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs text-text-muted mb-1">CPU request</label>
+            <input
+              value={cpuRequest}
+              onChange={(e) => setCpuRequest(e.target.value)}
+              placeholder="e.g. 500m"
+              className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+            />
+            <p className="text-[10px] text-text-muted/60 mt-1">
+              Minimum CPU guaranteed. Use millicores (e.g. &quot;500m&quot;) or cores (e.g.
+              &quot;2&quot;). Range: 100m–32000m.
+            </p>
+          </div>
+          <div>
+            <label className="block text-xs text-text-muted mb-1">CPU limit</label>
+            <input
+              value={cpuLimit}
+              onChange={(e) => setCpuLimit(e.target.value)}
+              placeholder="e.g. 2000m"
+              className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+            />
+            <p className="text-[10px] text-text-muted/60 mt-1">
+              Maximum CPU allowed. Must be &ge; CPU request.
+            </p>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs text-text-muted mb-1">Memory request</label>
+            <input
+              value={memoryRequest}
+              onChange={(e) => setMemoryRequest(e.target.value)}
+              placeholder="e.g. 512Mi"
+              className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+            />
+            <p className="text-[10px] text-text-muted/60 mt-1">
+              Minimum memory guaranteed. Use binary units (e.g. &quot;512Mi&quot;, &quot;2Gi&quot;).
+              Range: 256Mi–64Gi.
+            </p>
+          </div>
+          <div>
+            <label className="block text-xs text-text-muted mb-1">Memory limit</label>
+            <input
+              value={memoryLimit}
+              onChange={(e) => setMemoryLimit(e.target.value)}
+              placeholder="e.g. 4Gi"
+              className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+            />
+            <p className="text-[10px] text-text-muted/60 mt-1">
+              Maximum memory allowed. Must be &ge; memory request. Pod is OOM-killed if exceeded.
             </p>
           </div>
         </div>

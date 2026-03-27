@@ -36,6 +36,10 @@ export async function createSession(input: { repoUrl: string; userId?: string })
     maxAgentsPerPod: repoConfig?.maxAgentsPerPod ?? 2,
     maxPodInstances: repoConfig?.maxPodInstances ?? 1,
     networkPolicy: repoConfig?.networkPolicy ?? "unrestricted",
+    cpuRequest: repoConfig?.cpuRequest,
+    cpuLimit: repoConfig?.cpuLimit,
+    memoryRequest: repoConfig?.memoryRequest,
+    memoryLimit: repoConfig?.memoryLimit,
   });
 
   // Generate a short ID for the branch name

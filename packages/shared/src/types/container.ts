@@ -3,6 +3,8 @@ export interface ContainerSpec {
   command: string[];
   env: Record<string, string>;
   workDir: string;
+  cpuRequest?: string;
+  memoryRequest?: string;
   cpuLimit?: string;
   memoryLimit?: string;
   labels: Record<string, string>;
