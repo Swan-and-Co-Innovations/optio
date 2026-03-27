@@ -15,12 +15,16 @@ import {
 import { SESSION_COOKIE_NAME } from "../plugins/auth.js";
 
 const WEB_URL = process.env.WEB_PUBLIC_URL ?? "http://localhost:3000";
-const IS_PRODUCTION = process.env.NODE_ENV === "production";
 
 // In-memory state store for CSRF protection (short-lived, 10 min TTL, bounded size)
 const OAUTH_STATE_MAX_SIZE = 10_000;
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 const oauthStates = new Map<string, { provider: string; createdAt: number }>();
+
+// In-memory store for short-lived auth codes (exchange-code flow, 60s TTL, bounded)
+const AUTH_CODE_MAX_SIZE = 10_000;
+const AUTH_CODE_TTL_MS = 60 * 1000;
+const authCodes = new Map<string, { token: string; createdAt: number }>();
 
 // Clean expired states periodically
 setInterval(() => {
@@ -28,27 +32,31 @@ setInterval(() => {
   for (const [key, val] of oauthStates) {
     if (now - val.createdAt > OAUTH_STATE_TTL_MS) oauthStates.delete(key);
   }
+  for (const [key, val] of authCodes) {
+    if (now - val.createdAt > AUTH_CODE_TTL_MS) authCodes.delete(key);
+  }
 }, 60_000);
 
-function addOAuthState(state: string, provider: string): void {
-  // Evict oldest entries if at capacity
-  if (oauthStates.size >= OAUTH_STATE_MAX_SIZE) {
-    let oldest: string | undefined;
-    let oldestTime = Infinity;
-    for (const [key, val] of oauthStates) {
-      if (val.createdAt < oldestTime) {
-        oldestTime = val.createdAt;
-        oldest = key;
-      }
+function evictOldest<T extends { createdAt: number }>(map: Map<string, T>): void {
+  let oldest: string | undefined;
+  let oldestTime = Infinity;
+  for (const [key, val] of map) {
+    if (val.createdAt < oldestTime) {
+      oldestTime = val.createdAt;
+      oldest = key;
     }
-    if (oldest) oauthStates.delete(oldest);
   }
+  if (oldest) map.delete(oldest);
+}
+
+function addOAuthState(state: string, provider: string): void {
+  if (oauthStates.size >= OAUTH_STATE_MAX_SIZE) evictOldest(oauthStates);
   oauthStates.set(state, { provider, createdAt: Date.now() });
 }
 
-function buildSessionCookie(token: string): string {
-  const secure = IS_PRODUCTION ? "; Secure" : "";
-  return `${SESSION_COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 24 * 60 * 60}${secure}`;
+function addAuthCode(code: string, token: string): void {
+  if (authCodes.size >= AUTH_CODE_MAX_SIZE) evictOldest(authCodes);
+  authCodes.set(code, { token, createdAt: Date.now() });
 }
 
 export async function authRoutes(app: FastifyInstance) {
@@ -158,12 +166,38 @@ export async function authRoutes(app: FastifyInstance) {
       const profile = await provider.fetchUser(tokens.accessToken);
       const { token } = await createSession(providerName, profile);
 
-      // Set session cookie and redirect to web app
-      reply.header("Set-Cookie", buildSessionCookie(token)).redirect(`${WEB_URL}/`);
+      // Generate a short-lived auth code and redirect to the web app's callback.
+      // The web app exchanges the code for the session token server-side and
+      // sets the HttpOnly cookie on its own origin — avoiding cross-origin
+      // cookie issues when API and web run on different origins.
+      const authCode = randomBytes(32).toString("hex");
+      addAuthCode(authCode, token);
+      reply.redirect(`${WEB_URL}/auth/callback?code=${authCode}`);
     } catch (err) {
       app.log.error(err, "OAuth callback failed");
       reply.redirect(`${WEB_URL}/login?error=auth_failed`);
     }
+  });
+
+  /** Exchange a short-lived auth code for the session token. */
+  app.post("/api/auth/exchange-code", async (req, reply) => {
+    const { code } = (req.body ?? {}) as { code?: string };
+    if (!code) {
+      return reply.status(400).send({ error: "Missing code" });
+    }
+
+    const entry = authCodes.get(code);
+    if (!entry) {
+      return reply.status(400).send({ error: "Invalid or expired code" });
+    }
+    authCodes.delete(code); // one-time use
+
+    const user = await validateSession(entry.token);
+    if (!user) {
+      return reply.status(400).send({ error: "Session expired" });
+    }
+
+    reply.send({ token: entry.token });
   });
 
   /** Get current user from session. */
@@ -181,10 +215,16 @@ export async function authRoutes(app: FastifyInstance) {
       });
     }
 
-    // Parse session cookie
-    const cookieHeader = req.headers.cookie;
-    const match = cookieHeader?.match(new RegExp(`(?:^|;\\s*)${SESSION_COOKIE_NAME}=([^;]*)`));
-    const token = match ? decodeURIComponent(match[1]) : undefined;
+    // Resolve token: Bearer header (BFF proxy) → session cookie (direct)
+    const authHeader = req.headers.authorization;
+    let token: string | undefined;
+    if (authHeader?.startsWith("Bearer ")) {
+      token = authHeader.slice(7);
+    } else {
+      const cookieHeader = req.headers.cookie;
+      const match = cookieHeader?.match(new RegExp(`(?:^|;\\s*)${SESSION_COOKIE_NAME}=([^;]*)`));
+      token = match ? decodeURIComponent(match[1]) : undefined;
+    }
 
     if (!token) {
       return reply.status(401).send({ error: "Not authenticated" });
@@ -215,9 +255,16 @@ export async function authRoutes(app: FastifyInstance) {
 
   /** Logout — revoke session and clear cookie. */
   app.post("/api/auth/logout", async (req, reply) => {
-    const cookieHeader = req.headers.cookie;
-    const match = cookieHeader?.match(new RegExp(`(?:^|;\\s*)${SESSION_COOKIE_NAME}=([^;]*)`));
-    const token = match ? decodeURIComponent(match[1]) : undefined;
+    // Resolve token: Bearer header (BFF proxy) → session cookie (direct)
+    const authHeader = req.headers.authorization;
+    let token: string | undefined;
+    if (authHeader?.startsWith("Bearer ")) {
+      token = authHeader.slice(7);
+    } else {
+      const cookieHeader = req.headers.cookie;
+      const match = cookieHeader?.match(new RegExp(`(?:^|;\\s*)${SESSION_COOKIE_NAME}=([^;]*)`));
+      token = match ? decodeURIComponent(match[1]) : undefined;
+    }
 
     if (token) {
       await revokeSession(token);

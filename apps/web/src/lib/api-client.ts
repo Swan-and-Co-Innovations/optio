@@ -1,4 +1,8 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+/**
+ * All API requests are routed through the Next.js BFF proxy at /api/[...path].
+ * The proxy reads the HttpOnly session cookie server-side and forwards it as a
+ * Bearer token to the real API — the session token never touches client-side JS.
+ */
 
 /** Read the current workspace ID from localStorage (set by workspace switcher). */
 function getWorkspaceId(): string | null {
@@ -15,10 +19,9 @@ async function request<T>(path: string, opts?: RequestInit): Promise<T> {
   if (wsId) {
     headers["x-workspace-id"] = wsId;
   }
-  const res = await fetch(`${API_URL}${path}`, {
+  const res = await fetch(path, {
     ...opts,
     headers,
-    credentials: "include",
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -126,8 +129,7 @@ export const api = {
     if (params?.search) qs.set("search", params.search);
     if (params?.logType) qs.set("logType", params.logType);
     const query = qs.toString();
-    const url = `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000"}/api/tasks/${id}/logs/export${query ? `?${query}` : ""}`;
-    return url;
+    return `/api/tasks/${id}/logs/export${query ? `?${query}` : ""}`;
   },
 
   getTaskEvents: (id: string) => request<{ events: any[] }>(`/api/tasks/${id}/events`),

@@ -5,8 +5,6 @@ import { useSearchParams } from "next/navigation";
 import { api } from "@/lib/api-client";
 import { Zap, Loader2 } from "lucide-react";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
-
 const PROVIDER_ICONS: Record<string, React.ReactNode> = {
   github: (
     <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
@@ -112,7 +110,7 @@ export default function LoginPage() {
             {providers.map((provider) => (
               <a
                 key={provider.name}
-                href={`${API_URL}/api/auth/${provider.name}/login`}
+                href={`/api/auth/${provider.name}/login`}
                 className="flex items-center justify-center gap-3 w-full px-4 py-3 rounded-lg border border-border bg-bg-card text-sm font-medium hover:bg-bg-hover transition-colors"
               >
                 {PROVIDER_ICONS[provider.name]}
