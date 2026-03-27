@@ -98,6 +98,9 @@ export const api = {
   forceRedoTask: (id: string) =>
     request<{ task: any }>(`/api/tasks/${id}/force-redo`, { method: "POST" }),
 
+  runNowTask: (id: string) =>
+    request<{ task: any }>(`/api/tasks/${id}/run-now`, { method: "POST" }),
+
   resumeTask: (id: string, prompt?: string) =>
     request<{ task: any }>(`/api/tasks/${id}/resume`, {
       method: "POST",

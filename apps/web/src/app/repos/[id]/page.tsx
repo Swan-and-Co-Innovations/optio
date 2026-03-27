@@ -57,6 +57,7 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
   const [maxPodInstances, setMaxPodInstances] = useState(1);
   const [maxAgentsPerPod, setMaxAgentsPerPod] = useState(2);
   const [networkPolicy, setNetworkPolicy] = useState("unrestricted");
+  const [offPeakOnly, setOffPeakOnly] = useState(false);
   const [reviewEnabled, setReviewEnabled] = useState(false);
   const [reviewTrigger, setReviewTrigger] = useState("on_ci_pass");
   const [testCommand, setTestCommand] = useState("");
@@ -100,6 +101,7 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
         setMaxPodInstances(r.maxPodInstances ?? 1);
         setMaxAgentsPerPod(r.maxAgentsPerPod ?? 2);
         setNetworkPolicy(r.networkPolicy ?? "unrestricted");
+        setOffPeakOnly(r.offPeakOnly ?? false);
         setDefaultBranch(r.defaultBranch);
         setClaudeModel(r.claudeModel ?? "opus");
         setClaudeContextWindow(r.claudeContextWindow ?? "1m");
@@ -161,6 +163,7 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
         maxPodInstances,
         maxAgentsPerPod,
         networkPolicy,
+        offPeakOnly,
         defaultBranch,
         promptTemplateOverride: useCustomPrompt ? promptOverride : null,
         claudeModel,
@@ -399,6 +402,24 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
             </ul>
           </div>
         )}
+
+        <h3 className="text-xs font-medium text-text-muted pt-2">Off-Peak Scheduling</h3>
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={offPeakOnly}
+            onChange={(e) => setOffPeakOnly(e.target.checked)}
+            className="w-4 h-4 rounded"
+          />
+          <div>
+            <span className="text-sm">Off-peak only</span>
+            <p className="text-[10px] text-text-muted/60 mt-0.5">
+              Hold tasks in queue during peak hours (8 AM &ndash; 2 PM ET, weekdays) and run them
+              during off-peak windows when 2x usage limits apply. Individual tasks can be overridden
+              with &ldquo;Run Now&rdquo;.
+            </p>
+          </div>
+        </label>
       </section>
 
       {/* PR Lifecycle */}

@@ -40,8 +40,10 @@ import {
   GitMerge,
   Eye,
   ListChecks,
+  Moon,
 } from "lucide-react";
 import { StateBadge } from "@/components/state-badge";
+import { getOffPeakInfo } from "@optio/shared";
 
 const STATUS_COLORS: Record<string, string> = {
   Running: "text-success",
@@ -362,6 +364,23 @@ export default function OverviewPage() {
           <div className="flex items-center gap-2 mb-3">
             <Gauge className="w-3.5 h-3.5 text-text-muted" />
             <span className="text-xs font-medium text-text-heading">Claude Max Usage</span>
+            {(() => {
+              const info = getOffPeakInfo();
+              if (!info.promoActive) return null;
+              if (info.isOffPeak) {
+                return (
+                  <span className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-md bg-success/10 text-success font-medium">
+                    <Moon className="w-3 h-3" />
+                    2x limits — off-peak
+                  </span>
+                );
+              }
+              return (
+                <span className="text-[10px] text-text-muted/60">
+                  2x limits resume at 2:00 PM ET
+                </span>
+              );
+            })()}
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {usage.fiveHour && usage.fiveHour.utilization != null && (

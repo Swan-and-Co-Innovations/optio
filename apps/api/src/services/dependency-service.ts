@@ -1,7 +1,7 @@
 import { eq, and, inArray, sql } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { taskDependencies, tasks } from "../db/schema.js";
-import { TaskState, detectCycle, type DagEdge } from "@optio/shared";
+import { TaskState, detectCycle, type DagEdge, getOffPeakInfo } from "@optio/shared";
 import * as taskService from "./task-service.js";
 import { taskQueue } from "../workers/task-worker.js";
 import { logger } from "../logger.js";
@@ -208,6 +208,21 @@ export async function computePendingReason(taskId: string): Promise<string | nul
         if (prevStep.state !== "completed") {
           return `Waiting for step ${myIndex}: ${prevStep.title} (${prevStep.state})`;
         }
+      }
+    }
+  }
+
+  // Check off-peak hold for queued tasks
+  if (task.state === "queued" && !task.ignoreOffPeak) {
+    const { getRepoByUrl } = await import("./repo-service.js");
+    const repoConfig = await getRepoByUrl(task.repoUrl, task.workspaceId);
+    if (repoConfig?.offPeakOnly) {
+      const info = getOffPeakInfo();
+      if (!info.isOffPeak) {
+        const h = info.nextTransition.getHours();
+        const m = info.nextTransition.getMinutes();
+        const timeStr = `${h % 12 || 12}:${String(m).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"} ET`;
+        return `Waiting for off-peak hours (resumes at ${timeStr})`;
       }
     }
   }

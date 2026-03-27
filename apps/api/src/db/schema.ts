@@ -116,6 +116,7 @@ export const tasks = pgTable(
     lastPodId: uuid("last_pod_id"), // last pod this task ran on (for same-pod retry affinity)
     workflowRunId: uuid("workflow_run_id"), // nullable FK to workflow_runs
     createdBy: uuid("created_by"), // nullable FK to users (null when auth is disabled)
+    ignoreOffPeak: boolean("ignore_off_peak").notNull().default(false),
     workspaceId: uuid("workspace_id"), // nullable for backward compat; new tasks should always set this
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -222,6 +223,7 @@ export const repos = pgTable(
     slackNotifyOn: jsonb("slack_notify_on").$type<string[]>(), // e.g. ["completed","failed","pr_opened","needs_attention"]
     slackEnabled: boolean("slack_enabled").notNull().default(false),
     networkPolicy: text("network_policy").notNull().default("unrestricted"), // "unrestricted" | "restricted"
+    offPeakOnly: boolean("off_peak_only").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

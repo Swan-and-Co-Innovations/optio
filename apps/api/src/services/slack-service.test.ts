@@ -42,6 +42,7 @@ function makeRepoConfig(overrides: Partial<RepoRecord> = {}): RepoRecord {
     slackNotifyOn: null,
     slackEnabled: true,
     networkPolicy: "unrestricted",
+    offPeakOnly: false,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,

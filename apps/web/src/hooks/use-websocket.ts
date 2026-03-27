@@ -59,6 +59,12 @@ export function useGlobalWebSocket() {
       }
     });
 
+    client.on("task:pending_reason", (event) => {
+      useStore
+        .getState()
+        .updateTask(event.taskId, { pendingReason: event.data?.pendingReason ?? null });
+    });
+
     client.on("task:created", (event) => {
       useStore.getState().addTask({
         id: event.taskId,

@@ -8,6 +8,7 @@ import {
   DEFAULT_MAX_TURNS_CODING,
   DEFAULT_MAX_TURNS_REVIEW,
   type PresetImageId,
+  msUntilOffPeak,
 } from "@optio/shared";
 import { getAdapter } from "@optio/agent-adapters";
 import { parseClaudeEvent } from "../services/agent-event-parser.js";
@@ -109,6 +110,32 @@ export function startTaskWorker() {
           }
         }
 
+        // ── Off-peak hold check ────────────────────────────────────
+        // If the repo has offPeakOnly enabled and we're in peak hours,
+        // re-queue the task with a delay until off-peak starts.
+        const { getRepoByUrl } = await import("../services/repo-service.js");
+        const taskWorkspaceId = currentTask.workspaceId ?? null;
+        const repoConfig = await getRepoByUrl(currentTask.repoUrl, taskWorkspaceId);
+
+        if (repoConfig?.offPeakOnly && !currentTask.ignoreOffPeak) {
+          const delayMs = msUntilOffPeak();
+          if (delayMs > 0) {
+            log.info({ delayMs }, "Off-peak only — holding task until off-peak window");
+            await db.update(tasks).set({ updatedAt: new Date() }).where(eq(tasks.id, taskId));
+            await taskQueue.add("process-task", job.data, {
+              jobId: `${taskId}-offpeak-${Date.now()}`,
+              priority: currentTask.priority ?? 100,
+              delay: delayMs,
+            });
+            publishEvent({
+              type: "task:pending_reason",
+              taskId,
+              data: { pendingReason: "waiting_for_off_peak" },
+            });
+            return;
+          }
+        }
+
         // ── Serialized concurrency check + claim ─────────────────────
         // The claim lock ensures only one worker at a time checks
         // counts and claims a task. Without this, N workers all see
@@ -116,9 +143,6 @@ export function startTaskWorker() {
         // all fail the post-check and re-queue — creating 2N state
         // events per cycle that repeat every 10s ("event storm") and
         // preventing ANY task from ever running.
-        const { getRepoByUrl } = await import("../services/repo-service.js");
-        const taskWorkspaceId = currentTask.workspaceId ?? null;
-        const repoConfig = await getRepoByUrl(currentTask.repoUrl, taskWorkspaceId);
 
         // Compute effective concurrency: maxAgentsPerPod * maxPodInstances
         const maxAgentsPerPod = repoConfig?.maxAgentsPerPod ?? 2;

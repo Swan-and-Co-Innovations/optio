@@ -5,6 +5,7 @@ export type WsEvent =
   | TaskStateChangedEvent
   | TaskLogEvent
   | TaskCreatedEvent
+  | TaskPendingReasonEvent
   | AuthFailedEvent
   | SessionCreatedEvent
   | SessionEndedEvent
@@ -31,6 +32,12 @@ export interface TaskCreatedEvent {
   taskId: string;
   title: string;
   timestamp: string;
+}
+
+export interface TaskPendingReasonEvent {
+  type: "task:pending_reason";
+  taskId: string;
+  data: { pendingReason: string | null };
 }
 
 export interface AuthFailedEvent {

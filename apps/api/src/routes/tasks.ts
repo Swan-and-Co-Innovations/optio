@@ -377,6 +377,45 @@ export async function taskRoutes(app: FastifyInstance) {
     }
   });
 
+  // Run now — override off-peak hold for a queued task
+  app.post("/api/tasks/:id/run-now", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const existing = await taskService.getTask(id);
+    if (!existing) return reply.status(404).send({ error: "Task not found" });
+    const wsId = req.user?.workspaceId;
+    if (wsId && existing.workspaceId !== wsId) {
+      return reply.status(404).send({ error: "Task not found" });
+    }
+    if (existing.state !== "queued") {
+      return reply.status(400).send({ error: "Task is not in queued state" });
+    }
+
+    // Set ignoreOffPeak flag
+    await db
+      .update(tasks)
+      .set({ ignoreOffPeak: true, updatedAt: new Date() })
+      .where(eq(tasks.id, id));
+
+    // Remove existing delayed jobs for this task and re-queue immediately
+    const existingJobs = await taskQueue.getJobs(["waiting", "delayed", "prioritized"]);
+    for (const job of existingJobs) {
+      if (job.data?.taskId === id) {
+        await job.remove().catch(() => {});
+      }
+    }
+    await taskQueue.add(
+      "process-task",
+      { taskId: id },
+      {
+        jobId: `${id}-runnow-${Date.now()}`,
+        priority: existing.priority ?? 100,
+      },
+    );
+
+    const task = await taskService.getTask(id);
+    reply.send({ task });
+  });
+
   // Reorder tasks (update priorities)
   app.post("/api/tasks/reorder", async (req, reply) => {
     const body = req.body as { taskIds: string[] };
