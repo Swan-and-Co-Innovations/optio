@@ -463,8 +463,8 @@ export function TaskList() {
       </div>
 
       {/* Filters row */}
-      <div className="flex items-center gap-4 mb-4">
-        <div className="flex gap-1.5 flex-wrap flex-1">
+      <div className="flex flex-col gap-2 mb-4">
+        <div className="flex gap-1.5 flex-wrap">
           {STAGE_FILTERS.map((f) => {
             const count = f.value ? (stageCounts.get(f.value) ?? 0) : topLevelAll.length;
             return (
@@ -486,7 +486,7 @@ export function TaskList() {
             );
           })}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 self-start">
           <select
             value={filters.timeFilter}
             onChange={(e) => updateFilter("timeFilter", e.target.value)}

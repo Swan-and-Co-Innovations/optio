@@ -188,28 +188,30 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
     <div className="flex flex-col h-full">
       {/* Header */}
       <div className="shrink-0 p-4 border-b border-border bg-bg-card">
-        <div className="flex items-start justify-between gap-4 max-w-5xl mx-auto">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-3">
-              <h1 className="text-lg font-bold tracking-tight truncate">{task.title}</h1>
-              <StateBadge state={task.state} />
-            </div>
-            <div className="flex items-center gap-4 mt-2 text-xs text-text-muted">
-              <span className="flex items-center gap-1">
-                <GitBranch className="w-3 h-3" />
-                {repoName}
-              </span>
-              <span className="flex items-center gap-1 capitalize">
-                <Bot className="w-3 h-3" />
-                {task.agentType.replace("-", " ")}
-              </span>
-              <span className="flex items-center gap-1">
-                <Clock className="w-3 h-3" />
-                {formatRelativeTime(task.createdAt)}
-              </span>
+        <div className="flex flex-col gap-3 max-w-5xl mx-auto">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-3 flex-wrap">
+                <h1 className="text-lg font-bold tracking-tight">{task.title}</h1>
+                <StateBadge state={task.state} />
+              </div>
+              <div className="flex items-center gap-4 mt-2 text-xs text-text-muted flex-wrap">
+                <span className="flex items-center gap-1">
+                  <GitBranch className="w-3 h-3" />
+                  {repoName}
+                </span>
+                <span className="flex items-center gap-1 capitalize">
+                  <Bot className="w-3 h-3" />
+                  {task.agentType.replace("-", " ")}
+                </span>
+                <span className="flex items-center gap-1">
+                  <Clock className="w-3 h-3" />
+                  {formatRelativeTime(task.createdAt)}
+                </span>
+              </div>
             </div>
           </div>
-          <div className="flex items-center gap-2 flex-wrap justify-end shrink-0">
+          <div className="flex items-center gap-2 flex-wrap">
             {task.prUrl && (
               <a
                 href={task.prUrl}

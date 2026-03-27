@@ -359,8 +359,8 @@ export default function OverviewPage() {
       )}
 
       <div className="rounded-xl border border-border/50 bg-bg-card overflow-hidden">
-        <div className="flex items-center justify-between p-4">
-          <div className="flex items-center gap-4 text-xs">
+        <div className="flex flex-wrap items-center justify-between gap-2 p-4">
+          <div className="flex flex-wrap items-center gap-3 text-xs">
             {nodes[0] && (
               <span className="flex items-center gap-1.5 text-text-muted font-mono border-r border-border pr-4 mr-1">
                 {nodes[0].name} <span className="text-text-muted/50">/ optio</span>
