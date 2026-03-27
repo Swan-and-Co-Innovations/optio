@@ -8,10 +8,12 @@ import {
   DEFAULT_MAX_TURNS_CODING,
   DEFAULT_MAX_TURNS_REVIEW,
   type PresetImageId,
+  msUntilOffPeak,
 } from "@optio/shared";
 import { getAdapter } from "@optio/agent-adapters";
 import { parseClaudeEvent } from "../services/agent-event-parser.js";
 import { parseCodexEvent } from "../services/codex-event-parser.js";
+import { checkExistingPr } from "../services/pr-detection-service.js";
 import { db } from "../db/client.js";
 import { tasks } from "../db/schema.js";
 import { eq, sql } from "drizzle-orm";
@@ -108,6 +110,32 @@ export function startTaskWorker() {
           }
         }
 
+        // ── Off-peak hold check ────────────────────────────────────
+        // If the repo has offPeakOnly enabled and we're in peak hours,
+        // re-queue the task with a delay until off-peak starts.
+        const { getRepoByUrl } = await import("../services/repo-service.js");
+        const taskWorkspaceId = currentTask.workspaceId ?? null;
+        const repoConfig = await getRepoByUrl(currentTask.repoUrl, taskWorkspaceId);
+
+        if (repoConfig?.offPeakOnly && !currentTask.ignoreOffPeak) {
+          const delayMs = msUntilOffPeak();
+          if (delayMs > 0) {
+            log.info({ delayMs }, "Off-peak only — holding task until off-peak window");
+            await db.update(tasks).set({ updatedAt: new Date() }).where(eq(tasks.id, taskId));
+            await taskQueue.add("process-task", job.data, {
+              jobId: `${taskId}-offpeak-${Date.now()}`,
+              priority: currentTask.priority ?? 100,
+              delay: delayMs,
+            });
+            publishEvent({
+              type: "task:pending_reason",
+              taskId,
+              data: { pendingReason: "waiting_for_off_peak" },
+            });
+            return;
+          }
+        }
+
         // ── Serialized concurrency check + claim ─────────────────────
         // The claim lock ensures only one worker at a time checks
         // counts and claims a task. Without this, N workers all see
@@ -115,9 +143,6 @@ export function startTaskWorker() {
         // all fail the post-check and re-queue — creating 2N state
         // events per cycle that repeat every 10s ("event storm") and
         // preventing ANY task from ever running.
-        const { getRepoByUrl } = await import("../services/repo-service.js");
-        const taskWorkspaceId = (currentTask as any).workspaceId ?? null;
-        const repoConfig = await getRepoByUrl(currentTask.repoUrl, taskWorkspaceId);
 
         // Compute effective concurrency: maxAgentsPerPod * maxPodInstances
         const maxAgentsPerPod = repoConfig?.maxAgentsPerPod ?? 2;
@@ -182,6 +207,18 @@ export function startTaskWorker() {
           ((await retrieveSecretWithFallback("CLAUDE_AUTH_MODE", "global", taskWorkspaceId).catch(
             () => null,
           )) as any) ?? "api-key";
+        const codexAuthMode =
+          ((await retrieveSecretWithFallback("CODEX_AUTH_MODE", "global", taskWorkspaceId).catch(
+            () => null,
+          )) as any) ?? "api-key";
+        const codexAppServerUrl =
+          codexAuthMode === "app-server"
+            ? (((await retrieveSecretWithFallback(
+                "CODEX_APP_SERVER_URL",
+                "global",
+                taskWorkspaceId,
+              ).catch(() => null)) as any) ?? undefined)
+            : undefined;
         const optioApiUrl = `http://${process.env.API_HOST ?? "host.docker.internal"}:${process.env.API_PORT ?? "4000"}`;
 
         // Load and render prompt template
@@ -224,6 +261,8 @@ export function startTaskWorker() {
           repoUrl: task.repoUrl,
           repoBranch: task.repoBranch,
           claudeAuthMode,
+          codexAuthMode,
+          codexAppServerUrl,
           optioApiUrl,
           renderedPrompt: finalRenderedPrompt,
           taskFileContent: finalTaskFileContent,
@@ -355,6 +394,30 @@ export function startTaskWorker() {
         await taskService.updateTaskContainer(taskId, pod.podName ?? pod.podId ?? pod.id);
         await taskService.transitionTask(taskId, TaskState.RUNNING, "worktree_created");
         log.info("Running agent in worktree");
+
+        // ── Check for existing PR before launching agent ───────────────
+        // If a previous run already opened a PR for this task's branch,
+        // skip the agent entirely and transition straight to pr_opened.
+        // This avoids wasting compute on tasks killed by restarts/reconcile.
+        const isReviewTask0 = !!reviewOverride || task.taskType === "review";
+        if (!restartFromBranch && !resumeSessionId && !isReviewTask0) {
+          const existingPr = await checkExistingPr(task.repoUrl, taskId, taskWorkspaceId);
+          if (existingPr) {
+            log.info(
+              { prUrl: existingPr.url, prNumber: existingPr.number },
+              "Existing PR found — skipping agent, transitioning to pr_opened",
+            );
+            await taskService.updateTaskPr(taskId, existingPr.url);
+            await repoPool.updateWorktreeState(taskId, "preserved");
+            await taskService.transitionTask(
+              taskId,
+              TaskState.PR_OPENED,
+              "existing_pr_detected",
+              existingPr.url,
+            );
+            return;
+          }
+        }
 
         // Build the agent command based on type
         const isReviewTask = !!reviewOverride || task.taskType === "review";
@@ -707,20 +770,68 @@ export async function reconcileOrphanedTasks() {
     .from(tasks)
     .where(eq(tasks.state, "running" as any));
 
-  // Provisioning/running tasks lost their exec session — fail then re-queue
+  // Provisioning/running tasks lost their exec session.
+  // Before failing and re-queuing, check if a PR was already opened —
+  // if so, transition directly to pr_opened to avoid redoing work.
   for (const task of [...orphanedProvisioning, ...orphanedRunning]) {
-    await taskService.transitionTask(
-      task.id,
-      TaskState.FAILED,
-      "startup_reconcile",
-      "Server restarted during execution",
-    );
-    await taskService.transitionTask(
-      task.id,
-      TaskState.QUEUED,
-      "startup_reconcile",
-      "Re-queued after server restart",
-    );
+    const taskWsId = (task as any).workspaceId ?? null;
+    const isReview = task.taskType === "review";
+    let existingPr = null;
+    if (!isReview) {
+      try {
+        existingPr = await checkExistingPr(task.repoUrl, task.id, taskWsId);
+      } catch {
+        // Non-fatal — fall through to fail + re-queue
+      }
+    }
+
+    if (existingPr && task.state === "running") {
+      // running → pr_opened is a valid transition
+      logger.info(
+        { taskId: task.id, prUrl: existingPr.url },
+        "Existing PR found during reconciliation — transitioning to pr_opened",
+      );
+      await taskService.updateTaskPr(task.id, existingPr.url);
+      await taskService.transitionTask(
+        task.id,
+        TaskState.PR_OPENED,
+        "startup_reconcile",
+        existingPr.url,
+      );
+    } else if (existingPr && task.state === "provisioning") {
+      // provisioning → pr_opened is NOT valid; fail → re-queue and
+      // the pre-agent PR check will short-circuit it to pr_opened
+      logger.info(
+        { taskId: task.id, prUrl: existingPr.url },
+        "Existing PR found during reconciliation (provisioning) — will detect on re-queue",
+      );
+      await taskService.updateTaskPr(task.id, existingPr.url);
+      await taskService.transitionTask(
+        task.id,
+        TaskState.FAILED,
+        "startup_reconcile",
+        "Server restarted during execution",
+      );
+      await taskService.transitionTask(
+        task.id,
+        TaskState.QUEUED,
+        "startup_reconcile",
+        "Re-queued after server restart (PR already exists)",
+      );
+    } else {
+      await taskService.transitionTask(
+        task.id,
+        TaskState.FAILED,
+        "startup_reconcile",
+        "Server restarted during execution",
+      );
+      await taskService.transitionTask(
+        task.id,
+        TaskState.QUEUED,
+        "startup_reconcile",
+        "Re-queued after server restart",
+      );
+    }
   }
 
   // Re-query queued tasks (provisioning/running were just transitioned to queued above)
@@ -835,11 +946,16 @@ export function buildAgentCommand(
         `  ${resumeFlag}`.trim(),
       ];
     }
-    case "codex":
+    case "codex": {
+      const appServerFlag =
+        env.OPTIO_CODEX_AUTH_MODE === "app-server" && env.OPTIO_CODEX_APP_SERVER_URL
+          ? ` --app-server ${JSON.stringify(env.OPTIO_CODEX_APP_SERVER_URL)}`
+          : "";
       return [
-        `echo "[optio] Running OpenAI Codex..."`,
-        `codex exec --full-auto ${JSON.stringify(prompt)} --json`,
+        `echo "[optio] Running OpenAI Codex${appServerFlag ? " (app-server)" : ""}..."`,
+        `codex exec --full-auto ${JSON.stringify(prompt)}${appServerFlag} --json`,
       ];
+    }
     default:
       return [`echo "Unknown agent type: ${agentType}" && exit 1`];
   }

@@ -115,6 +115,14 @@ externalDatabase:
 externalRedis:
   url: ""  # e.g., redis://host:6379
 
+# Public URLs — required for OAuth callbacks and cross-origin cookie handling.
+# Set these to the externally-reachable URLs of the API and web services.
+# When using Ingress, derive from the ingress host (e.g. https://optio.example.com).
+# For local dev with NodePort, use http://localhost:<nodePort>.
+publicUrl:
+  api: ""   # e.g. https://optio.example.com or http://localhost:30400
+  web: ""   # e.g. https://optio.example.com or http://localhost:30310
+
 # Authentication
 auth:
   # Set to true to disable authentication (NOT recommended for production).

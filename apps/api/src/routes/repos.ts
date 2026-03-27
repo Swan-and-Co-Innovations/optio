@@ -47,6 +47,7 @@ const updateRepoSchema = z.object({
     .optional(),
   slackEnabled: z.boolean().optional(),
   networkPolicy: z.enum(["unrestricted", "restricted"]).optional(),
+  offPeakOnly: z.boolean().optional(),
   cpuRequest: z.string().nullable().optional(),
   cpuLimit: z.string().nullable().optional(),
   memoryRequest: z.string().nullable().optional(),

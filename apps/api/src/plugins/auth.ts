@@ -26,6 +26,11 @@ function parseCookie(header: string | undefined, name: string): string | undefin
   return match ? decodeURIComponent(match[1]) : undefined;
 }
 
+function parseBearer(header: string | undefined): string | undefined {
+  if (!header?.startsWith("Bearer ")) return undefined;
+  return header.slice(7);
+}
+
 async function authPlugin(app: FastifyInstance) {
   app.addHook("preHandler", async (req: FastifyRequest, reply: FastifyReply) => {
     // Auth disabled — allow everything
@@ -34,8 +39,9 @@ async function authPlugin(app: FastifyInstance) {
     // Public routes — no auth needed
     if (isPublicRoute(req.url)) return;
 
-    // WebSocket upgrades pass token as query param
+    // Token resolution order: Bearer header → session cookie → query param (WS)
     const token =
+      parseBearer(req.headers.authorization) ??
       parseCookie(req.headers.cookie, SESSION_COOKIE_NAME) ??
       (req.query as Record<string, string>)?.token;
 

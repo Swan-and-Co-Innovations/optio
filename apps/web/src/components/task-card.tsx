@@ -7,7 +7,7 @@ import { StateBadge } from "./state-badge";
 import { classifyError } from "@optio/shared";
 import { api } from "@/lib/api-client";
 import { formatRelativeTime } from "@/lib/utils";
-import { ExternalLink, RotateCcw, Bot, Link2, Clock } from "lucide-react";
+import { ExternalLink, RotateCcw, Bot, Link2, Clock, Moon, Play } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface TaskSummary {
@@ -21,6 +21,7 @@ interface TaskSummary {
   errorMessage?: string;
   taskType?: string;
   parentTaskId?: string;
+  pendingReason?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -87,6 +88,38 @@ export const TaskCard = React.memo(function TaskCard({ task, subtasks }: TaskCar
           <div className="mt-3 px-3 py-2 rounded-lg bg-bg-hover/50 border border-border/50 flex items-center gap-2">
             <Clock className="w-3 h-3 text-text-muted/50 shrink-0" />
             <span className="text-xs text-text-muted/60">Waiting for previous step</span>
+          </div>
+        )}
+
+        {/* Off-peak hold indicator */}
+        {task.pendingReason === "waiting_for_off_peak" && task.state === "queued" && (
+          <div className="mt-3 px-3 py-2 rounded-lg bg-info/5 border border-info/10 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Moon className="w-3 h-3 text-info/60 shrink-0" />
+              <span className="text-xs text-info/70">Waiting for off-peak hours</span>
+            </div>
+            <button
+              onClick={async (e) => {
+                e.stopPropagation();
+                const btn = e.currentTarget;
+                btn.textContent = "Starting...";
+                btn.setAttribute("disabled", "true");
+                try {
+                  await api.runNowTask(task.id);
+                  window.location.href = window.location.href;
+                } catch {
+                  btn.textContent = "Failed";
+                  setTimeout(() => {
+                    btn.textContent = "Run Now";
+                    btn.removeAttribute("disabled");
+                  }, 2000);
+                }
+              }}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs bg-primary/10 text-primary hover:bg-primary/20 transition-all shrink-0 btn-press"
+            >
+              <Play className="w-3 h-3" />
+              Run Now
+            </button>
           </div>
         )}
 

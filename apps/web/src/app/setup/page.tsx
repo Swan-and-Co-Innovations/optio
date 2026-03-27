@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
@@ -69,6 +69,10 @@ export default function SetupPage() {
   const [oauthChecking, setOauthChecking] = useState(false);
   const [showManualPaste, setShowManualPaste] = useState(false);
 
+  // Step 3: Codex auth mode
+  const [codexAuthMode, setCodexAuthMode] = useState<"api-key" | "app-server">("api-key");
+  const [codexAppServerUrl, setCodexAppServerUrl] = useState("");
+
   // Step 4: Repos
   const [repos, setRepos] = useState<RepoEntry[]>([]);
   const [suggestedRepos, setSuggestedRepos] = useState<
@@ -84,6 +88,7 @@ export default function SetupPage() {
   >([]);
   const [suggestedLoading, setSuggestedLoading] = useState(false);
   const [manualRepoUrl, setManualRepoUrl] = useState("");
+  const validatingUrlsRef = useRef<Set<string>>(new Set());
 
   // Step 5: Prompt template
   const [promptTemplate, setPromptTemplate] = useState("");
@@ -137,6 +142,9 @@ export default function SetupPage() {
     claudeAuthMode === "oauth-token"
       ? oauthTokenDetected || oauthToken.trim().length > 0
       : anthropicValidated;
+
+  const codexReady =
+    codexAuthMode === "app-server" ? codexAppServerUrl.trim().length > 0 : openaiValidated;
 
   const currentStep = STEPS[step];
 
@@ -239,6 +247,16 @@ export default function SetupPage() {
     setLoading(false);
   };
 
+  // Validate newly added repos when repos state changes
+  useEffect(() => {
+    for (const repo of repos) {
+      if (!repo.validated && !validatingUrlsRef.current.has(repo.url)) {
+        validatingUrlsRef.current.add(repo.url);
+        validateRepo(repo.url);
+      }
+    }
+  }, [repos]);
+
   // Save step: store all secrets and config
   const saveGithubStep = async () => {
     setLoading(true);
@@ -263,7 +281,12 @@ export default function SetupPage() {
       if (claudeAuthMode === "oauth-token" && oauthToken.trim()) {
         await api.createSecret({ name: "CLAUDE_CODE_OAUTH_TOKEN", value: oauthToken });
       }
-      if (openaiKey.trim() && openaiValidated) {
+      // Save Codex auth mode and credentials
+      if (codexAuthMode === "app-server" && codexAppServerUrl.trim()) {
+        await api.createSecret({ name: "CODEX_AUTH_MODE", value: "app-server" });
+        await api.createSecret({ name: "CODEX_APP_SERVER_URL", value: codexAppServerUrl.trim() });
+      } else if (openaiKey.trim() && openaiValidated) {
+        await api.createSecret({ name: "CODEX_AUTH_MODE", value: "api-key" });
         await api.createSecret({ name: "OPENAI_API_KEY", value: openaiKey });
       }
       goNext();
@@ -704,53 +727,146 @@ export default function SetupPage() {
                 </div>
               </div>
 
-              {/* OpenAI (unchanged) */}
-              <div className="p-4 rounded-md bg-bg border border-border space-y-3">
+              {/* OpenAI Codex */}
+              <div className="p-4 rounded-md bg-bg border border-border space-y-4">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium">
                     Codex (OpenAI) <span className="text-text-muted font-normal">— optional</span>
                   </span>
-                  {openaiValidated && (
+                  {codexReady && (
                     <span className="text-success text-xs flex items-center gap-1">
-                      <CheckCircle className="w-3 h-3" /> Valid
+                      <CheckCircle className="w-3 h-3" /> Ready
                     </span>
                   )}
                 </div>
-                <div className="flex gap-2">
-                  <input
-                    type="password"
-                    value={openaiKey}
-                    onChange={(e) => {
-                      setOpenaiKey(e.target.value);
-                      setOpenaiValidated(false);
-                      setOpenaiError("");
-                    }}
-                    onPaste={(e) => {
-                      e.preventDefault();
-                      const pasted = e.clipboardData.getData("text").trim();
-                      if (pasted) {
-                        setOpenaiKey(pasted);
-                        setOpenaiValidated(false);
-                        setOpenaiError("");
-                        setTimeout(() => validateOpenai(pasted), 50);
-                      }
-                    }}
-                    placeholder="sk-..."
-                    className="flex-1 px-3 py-2 rounded-md bg-bg-card border border-border text-sm focus:outline-none focus:border-primary"
-                  />
-                  <button
-                    onClick={() => validateOpenai()}
-                    disabled={loading || !openaiKey.trim() || openaiValidated}
-                    className="px-3 py-2 rounded-md bg-bg-hover text-sm hover:bg-border disabled:opacity-50"
+
+                {/* Codex auth mode selector */}
+                <div className="space-y-2">
+                  <label
+                    className={cn(
+                      "flex items-start gap-3 p-3 rounded-md border cursor-pointer transition-colors",
+                      codexAuthMode === "app-server"
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:border-text-muted",
+                    )}
                   >
-                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Validate"}
-                  </button>
+                    <input
+                      type="radio"
+                      name="codex-auth"
+                      checked={codexAuthMode === "app-server"}
+                      onChange={() => setCodexAuthMode("app-server")}
+                      className="mt-0.5"
+                    />
+                    <div className="flex-1">
+                      <span className="text-sm font-medium">
+                        Use ChatGPT subscription (app-server)
+                      </span>
+                      <p className="text-xs text-text-muted mt-0.5">
+                        Run Codex CLI with your ChatGPT Plus/Pro plan — no API key costs. Start the
+                        Codex desktop app or run{" "}
+                        <code className="px-1 py-0.5 bg-bg-card rounded text-primary text-[11px]">
+                          codex --app-server
+                        </code>{" "}
+                        locally, then provide the WebSocket endpoint below.
+                      </p>
+                      {codexAuthMode === "app-server" && (
+                        <div className="mt-3 space-y-2">
+                          <div>
+                            <p className="text-xs text-text-muted mb-1.5">
+                              App-server WebSocket endpoint:
+                            </p>
+                            <input
+                              type="text"
+                              value={codexAppServerUrl}
+                              onChange={(e) => setCodexAppServerUrl(e.target.value)}
+                              onPaste={(e) => {
+                                e.preventDefault();
+                                const pasted = e.clipboardData.getData("text").trim();
+                                if (pasted) {
+                                  setCodexAppServerUrl(pasted);
+                                }
+                              }}
+                              placeholder="ws://localhost:3900/v1/connect"
+                              className="w-full px-3 py-2 rounded-md bg-bg-card border border-border text-sm focus:outline-none focus:border-primary font-mono"
+                            />
+                          </div>
+                          {codexAppServerUrl.trim().length > 0 && (
+                            <span className="text-xs text-success flex items-center gap-1">
+                              <Check className="w-3 h-3" /> Endpoint configured
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </label>
+
+                  <label
+                    className={cn(
+                      "flex items-start gap-3 p-3 rounded-md border cursor-pointer transition-colors",
+                      codexAuthMode === "api-key"
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:border-text-muted",
+                    )}
+                  >
+                    <input
+                      type="radio"
+                      name="codex-auth"
+                      checked={codexAuthMode === "api-key"}
+                      onChange={() => setCodexAuthMode("api-key")}
+                      className="mt-0.5"
+                    />
+                    <div className="flex-1">
+                      <span className="text-sm font-medium">Use API key</span>
+                      <p className="text-xs text-text-muted mt-0.5">
+                        Pay-per-use via the OpenAI API. Get a key from platform.openai.com.
+                      </p>
+                      {codexAuthMode === "api-key" && (
+                        <div className="mt-2 space-y-2">
+                          <div className="flex gap-2">
+                            <input
+                              type="password"
+                              value={openaiKey}
+                              onChange={(e) => {
+                                setOpenaiKey(e.target.value);
+                                setOpenaiValidated(false);
+                                setOpenaiError("");
+                              }}
+                              onPaste={(e) => {
+                                e.preventDefault();
+                                const pasted = e.clipboardData.getData("text").trim();
+                                if (pasted) {
+                                  setOpenaiKey(pasted);
+                                  setOpenaiValidated(false);
+                                  setOpenaiError("");
+                                  setTimeout(() => validateOpenai(pasted), 50);
+                                }
+                              }}
+                              placeholder="sk-..."
+                              className="flex-1 px-3 py-2 rounded-md bg-bg-card border border-border text-sm focus:outline-none focus:border-primary"
+                            />
+                            <button
+                              onClick={() => validateOpenai()}
+                              disabled={loading || !openaiKey.trim() || openaiValidated}
+                              className="px-3 py-2 rounded-md bg-bg-hover text-sm hover:bg-border disabled:opacity-50"
+                            >
+                              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Validate"}
+                            </button>
+                          </div>
+                          {openaiError && (
+                            <p className="text-error text-xs flex items-center gap-1">
+                              <AlertCircle className="w-3 h-3" /> {openaiError}
+                            </p>
+                          )}
+                          {openaiValidated && (
+                            <p className="text-success text-xs flex items-center gap-1">
+                              <CheckCircle className="w-3 h-3" /> API key valid
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </label>
                 </div>
-                {openaiError && (
-                  <p className="text-error text-xs flex items-center gap-1">
-                    <AlertCircle className="w-3 h-3" /> {openaiError}
-                  </p>
-                )}
               </div>
 
               <div className="flex items-center justify-between">
@@ -762,7 +878,7 @@ export default function SetupPage() {
                 </button>
                 <button
                   onClick={saveAgentKeysStep}
-                  disabled={(!claudeReady && !openaiValidated) || loading}
+                  disabled={(!claudeReady && !codexReady) || loading}
                   className="flex items-center gap-2 px-5 py-2 rounded-md bg-primary text-white text-sm hover:bg-primary-hover disabled:opacity-50"
                 >
                   {loading ? (
@@ -880,7 +996,6 @@ export default function SetupPage() {
                         const url = manualRepoUrl.trim();
                         setRepos([...repos, { url, validated: false }]);
                         setManualRepoUrl("");
-                        setTimeout(() => validateRepo(url), 100);
                       }
                     }}
                     placeholder="https://github.com/owner/repo"
@@ -892,7 +1007,6 @@ export default function SetupPage() {
                       const url = manualRepoUrl.trim();
                       setRepos([...repos, { url, validated: false }]);
                       setManualRepoUrl("");
-                      setTimeout(() => validateRepo(url), 100);
                     }}
                     disabled={!manualRepoUrl.trim()}
                     className="px-3 py-2 rounded-md bg-bg-hover text-sm hover:bg-border disabled:opacity-50"

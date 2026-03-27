@@ -176,7 +176,7 @@ export function startPrWatcherWorker() {
 
       if (openPrTasks.length > 0) {
         for (const task of openPrTasks) {
-          const taskWsId = (task as any).workspaceId ?? null;
+          const taskWsId = task.workspaceId ?? null;
           const githubToken = await getGithubToken(taskWsId);
           if (!githubToken) continue;
 
@@ -265,11 +265,16 @@ export function startPrWatcherWorker() {
               }
             }
 
-            // Update task
+            // Update task — preserve "conflicts" status while PR is still unmergeable
+            // to prevent the conflict-resume guard from re-firing every poll cycle
+            const effectiveChecksStatus =
+              task.prChecksStatus === "conflicts" && prData.mergeable === false
+                ? "conflicts"
+                : checksStatus;
             const updates: Record<string, unknown> = {
               prNumber,
               prState: prData.merged ? "merged" : prData.state,
-              prChecksStatus: checksStatus,
+              prChecksStatus: effectiveChecksStatus,
               prReviewStatus: reviewStatus,
               updatedAt: new Date(),
             };
@@ -311,7 +316,12 @@ export function startPrWatcherWorker() {
               .map((r: any) => r.name)
               .join(", ");
 
-            const resumeAgent = async (trigger: string, prompt: string, jobSuffix: string) => {
+            const resumeAgent = async (
+              trigger: string,
+              prompt: string,
+              jobSuffix: string,
+              opts?: { freshSession?: boolean },
+            ) => {
               await taskService.transitionTask(
                 task.id,
                 TaskState.NEEDS_ATTENTION,
@@ -327,7 +337,9 @@ export function startPrWatcherWorker() {
                 "process-task",
                 {
                   taskId: task.id,
-                  resumeSessionId: task.sessionId,
+                  // Fresh session: don't pass resumeSessionId so the agent starts a new
+                  // conversation with the resume prompt instead of continuing a finished session
+                  resumeSessionId: opts?.freshSession ? undefined : task.sessionId,
                   resumePrompt: prompt,
                   restartFromBranch: !!task.prUrl,
                 },
@@ -427,6 +439,7 @@ export function startPrWatcherWorker() {
                     "merge_conflicts",
                     `Your PR has merge conflicts with the base branch. Please:\n1. Run \`git fetch origin && git rebase origin/main\`\n2. Resolve any conflicts\n3. Run the tests to make sure everything still works\n4. Force-push: \`git push --force-with-lease\``,
                     "conflicts",
+                    { freshSession: true },
                   );
                   logger.info({ taskId: task.id }, "Auto-resuming agent to fix merge conflicts");
                   break;
