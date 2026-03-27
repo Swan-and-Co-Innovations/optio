@@ -182,6 +182,18 @@ export function startTaskWorker() {
           ((await retrieveSecretWithFallback("CLAUDE_AUTH_MODE", "global", taskWorkspaceId).catch(
             () => null,
           )) as any) ?? "api-key";
+        const codexAuthMode =
+          ((await retrieveSecretWithFallback("CODEX_AUTH_MODE", "global", taskWorkspaceId).catch(
+            () => null,
+          )) as any) ?? "api-key";
+        const codexAppServerUrl =
+          codexAuthMode === "app-server"
+            ? (((await retrieveSecretWithFallback(
+                "CODEX_APP_SERVER_URL",
+                "global",
+                taskWorkspaceId,
+              ).catch(() => null)) as any) ?? undefined)
+            : undefined;
         const optioApiUrl = `http://${process.env.API_HOST ?? "host.docker.internal"}:${process.env.API_PORT ?? "4000"}`;
 
         // Load and render prompt template
@@ -224,6 +236,8 @@ export function startTaskWorker() {
           repoUrl: task.repoUrl,
           repoBranch: task.repoBranch,
           claudeAuthMode,
+          codexAuthMode,
+          codexAppServerUrl,
           optioApiUrl,
           renderedPrompt: finalRenderedPrompt,
           taskFileContent: finalTaskFileContent,
@@ -831,11 +845,16 @@ export function buildAgentCommand(
         `  ${resumeFlag}`.trim(),
       ];
     }
-    case "codex":
+    case "codex": {
+      const appServerFlag =
+        env.OPTIO_CODEX_AUTH_MODE === "app-server" && env.OPTIO_CODEX_APP_SERVER_URL
+          ? ` --app-server ${JSON.stringify(env.OPTIO_CODEX_APP_SERVER_URL)}`
+          : "";
       return [
-        `echo "[optio] Running OpenAI Codex..."`,
-        `codex exec --full-auto ${JSON.stringify(prompt)} --json`,
+        `echo "[optio] Running OpenAI Codex${appServerFlag ? " (app-server)" : ""}..."`,
+        `codex exec --full-auto ${JSON.stringify(prompt)}${appServerFlag} --json`,
       ];
+    }
     default:
       return [`echo "Unknown agent type: ${agentType}" && exit 1`];
   }

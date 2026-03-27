@@ -26,7 +26,17 @@ export async function setupRoutes(app: FastifyInstance) {
       }
     } catch {}
 
-    const hasAnyAgentKey = hasAnthropicKey || hasOpenAIKey || usingSubscription || hasOauthToken;
+    // Check if using Codex app-server mode (no API key needed)
+    let hasCodexAppServer = false;
+    try {
+      const codexAuthMode = await retrieveSecret("CODEX_AUTH_MODE").catch(() => null);
+      if (codexAuthMode === "app-server") {
+        hasCodexAppServer = secretNames.includes("CODEX_APP_SERVER_URL");
+      }
+    } catch {}
+
+    const hasAnyAgentKey =
+      hasAnthropicKey || hasOpenAIKey || usingSubscription || hasOauthToken || hasCodexAppServer;
 
     let runtimeHealthy = false;
     try {
@@ -42,6 +52,7 @@ export async function setupRoutes(app: FastifyInstance) {
         githubToken: { done: hasGithubToken, label: "GitHub token" },
         anthropicKey: { done: hasAnthropicKey, label: "Anthropic API key" },
         openaiKey: { done: hasOpenAIKey, label: "OpenAI API key" },
+        codexAppServer: { done: hasCodexAppServer, label: "Codex app-server" },
         anyAgentKey: { done: hasAnyAgentKey, label: "At least one agent API key" },
       },
     });

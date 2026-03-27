@@ -1,4 +1,5 @@
 export type ClaudeAuthMode = "api-key" | "max-subscription";
+export type CodexAuthMode = "api-key" | "app-server";
 
 export interface AgentTaskInput {
   taskId: string;
@@ -7,6 +8,9 @@ export interface AgentTaskInput {
   repoBranch: string;
   additionalContext?: string;
   claudeAuthMode?: ClaudeAuthMode;
+  codexAuthMode?: CodexAuthMode;
+  /** The app-server WebSocket URL for Codex CLI (used when codexAuthMode is "app-server") */
+  codexAppServerUrl?: string;
   optioApiUrl?: string; // for apiKeyHelper callback
   /** The rendered system prompt (from the prompt template) */
   renderedPrompt?: string;

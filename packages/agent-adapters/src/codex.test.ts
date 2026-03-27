@@ -36,7 +36,25 @@ describe("CodexAdapter", () => {
     it("reports both missing when empty", () => {
       const result = adapter.validateSecrets([]);
       expect(result.valid).toBe(false);
-      expect(result.missing).toEqual(["OPENAI_API_KEY", "GITHUB_TOKEN"]);
+      expect(result.missing).toEqual(["GITHUB_TOKEN", "OPENAI_API_KEY"]);
+    });
+
+    it("does not require OPENAI_API_KEY in app-server mode", () => {
+      const result = adapter.validateSecrets(["GITHUB_TOKEN"], "app-server");
+      expect(result.valid).toBe(true);
+      expect(result.missing).toEqual([]);
+    });
+
+    it("still requires GITHUB_TOKEN in app-server mode", () => {
+      const result = adapter.validateSecrets([], "app-server");
+      expect(result.valid).toBe(false);
+      expect(result.missing).toEqual(["GITHUB_TOKEN"]);
+    });
+
+    it("requires OPENAI_API_KEY in api-key mode", () => {
+      const result = adapter.validateSecrets(["GITHUB_TOKEN"], "api-key");
+      expect(result.valid).toBe(false);
+      expect(result.missing).toContain("OPENAI_API_KEY");
     });
   });
 
@@ -94,9 +112,35 @@ describe("CodexAdapter", () => {
       expect(config.env.OPTIO_BRANCH_NAME).toBe("optio/task-test-123");
     });
 
-    it("requires correct secrets", () => {
+    it("requires correct secrets in api-key mode", () => {
       const config = adapter.buildContainerConfig(baseInput);
-      expect(config.requiredSecrets).toEqual(["OPENAI_API_KEY", "GITHUB_TOKEN"]);
+      expect(config.requiredSecrets).toContain("OPENAI_API_KEY");
+      expect(config.requiredSecrets).toContain("GITHUB_TOKEN");
+    });
+
+    it("does not require OPENAI_API_KEY in app-server mode", () => {
+      const config = adapter.buildContainerConfig({
+        ...baseInput,
+        codexAuthMode: "app-server",
+        codexAppServerUrl: "ws://localhost:3900/v1/connect",
+      });
+      expect(config.requiredSecrets).toContain("GITHUB_TOKEN");
+      expect(config.requiredSecrets).not.toContain("OPENAI_API_KEY");
+    });
+
+    it("sets OPTIO_CODEX_AUTH_MODE and OPTIO_CODEX_APP_SERVER_URL in app-server mode", () => {
+      const config = adapter.buildContainerConfig({
+        ...baseInput,
+        codexAuthMode: "app-server",
+        codexAppServerUrl: "ws://localhost:3900/v1/connect",
+      });
+      expect(config.env.OPTIO_CODEX_AUTH_MODE).toBe("app-server");
+      expect(config.env.OPTIO_CODEX_APP_SERVER_URL).toBe("ws://localhost:3900/v1/connect");
+    });
+
+    it("sets OPTIO_CODEX_AUTH_MODE to api-key by default", () => {
+      const config = adapter.buildContainerConfig(baseInput);
+      expect(config.env.OPTIO_CODEX_AUTH_MODE).toBe("api-key");
     });
   });
 

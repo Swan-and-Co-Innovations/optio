@@ -1,4 +1,9 @@
-import type { AgentTaskInput, AgentContainerConfig, AgentResult } from "@optio/shared";
+import type {
+  AgentTaskInput,
+  AgentContainerConfig,
+  AgentResult,
+  CodexAuthMode,
+} from "@optio/shared";
 import { TASK_BRANCH_PREFIX } from "@optio/shared";
 import type { AgentAdapter } from "./types.js";
 
@@ -33,8 +38,16 @@ export class CodexAdapter implements AgentAdapter {
   readonly type = "codex";
   readonly displayName = "OpenAI Codex";
 
-  validateSecrets(availableSecrets: string[]): { valid: boolean; missing: string[] } {
-    const required = ["OPENAI_API_KEY", "GITHUB_TOKEN"];
+  validateSecrets(
+    availableSecrets: string[],
+    codexAuthMode?: CodexAuthMode,
+  ): { valid: boolean; missing: string[] } {
+    const required: string[] = ["GITHUB_TOKEN"];
+    // In app-server mode, no OpenAI API key is needed — the CLI connects to
+    // a local app-server endpoint that handles auth via the user's ChatGPT plan.
+    if (codexAuthMode !== "app-server") {
+      required.push("OPENAI_API_KEY");
+    }
     const missing = required.filter((s) => !availableSecrets.includes(s));
     return { valid: missing.length === 0, missing };
   }
@@ -52,7 +65,18 @@ export class CodexAdapter implements AgentAdapter {
       OPTIO_BRANCH_NAME: `${TASK_BRANCH_PREFIX}${input.taskId}`,
     };
 
-    const requiredSecrets = ["OPENAI_API_KEY", "GITHUB_TOKEN"];
+    const requiredSecrets: string[] = ["GITHUB_TOKEN"];
+
+    if (input.codexAuthMode === "app-server") {
+      env.OPTIO_CODEX_AUTH_MODE = "app-server";
+      if (input.codexAppServerUrl) {
+        env.OPTIO_CODEX_APP_SERVER_URL = input.codexAppServerUrl;
+      }
+    } else {
+      env.OPTIO_CODEX_AUTH_MODE = "api-key";
+      requiredSecrets.push("OPENAI_API_KEY");
+    }
+
     const setupFiles: AgentContainerConfig["setupFiles"] = [];
 
     // Write the task file into the worktree

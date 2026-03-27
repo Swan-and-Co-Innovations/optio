@@ -92,6 +92,39 @@ describe("buildAgentCommand", () => {
       expect(cmds.some((c) => c.includes("--full-auto"))).toBe(true);
       expect(cmds.some((c) => c.includes("--json"))).toBe(true);
     });
+
+    it("does not include --app-server flag in api-key mode", () => {
+      const env = { OPTIO_PROMPT: "Build feature", OPTIO_CODEX_AUTH_MODE: "api-key" };
+      const cmds = buildAgentCommand("codex", env);
+      expect(cmds.some((c) => c.includes("--app-server"))).toBe(false);
+    });
+
+    it("includes --app-server flag with URL in app-server mode", () => {
+      const env = {
+        OPTIO_PROMPT: "Build feature",
+        OPTIO_CODEX_AUTH_MODE: "app-server",
+        OPTIO_CODEX_APP_SERVER_URL: "ws://localhost:3900/v1/connect",
+      };
+      const cmds = buildAgentCommand("codex", env);
+      expect(cmds.some((c) => c.includes("--app-server"))).toBe(true);
+      expect(cmds.some((c) => c.includes("ws://localhost:3900/v1/connect"))).toBe(true);
+    });
+
+    it("includes app-server label in echo when in app-server mode", () => {
+      const env = {
+        OPTIO_PROMPT: "Build feature",
+        OPTIO_CODEX_AUTH_MODE: "app-server",
+        OPTIO_CODEX_APP_SERVER_URL: "ws://localhost:3900/v1/connect",
+      };
+      const cmds = buildAgentCommand("codex", env);
+      expect(cmds.some((c) => c.includes("(app-server)"))).toBe(true);
+    });
+
+    it("does not include --app-server flag when auth mode is app-server but URL is missing", () => {
+      const env = { OPTIO_PROMPT: "Build feature", OPTIO_CODEX_AUTH_MODE: "app-server" };
+      const cmds = buildAgentCommand("codex", env);
+      expect(cmds.some((c) => c.includes("--app-server"))).toBe(false);
+    });
   });
 
   describe("unknown agent", () => {
