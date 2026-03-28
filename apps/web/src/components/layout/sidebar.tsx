@@ -17,9 +17,11 @@ import {
   Clock,
   FileText,
   GitBranch,
+  Bot,
 } from "lucide-react";
 import { UserMenu } from "./user-menu";
 import { WorkspaceSwitcher } from "./workspace-switcher";
+import { useOptioChatStore } from "@/components/optio-chat/optio-chat-store.js";
 
 const MAIN_NAV = [
   { href: "/", label: "Overview", icon: LayoutDashboard },
@@ -69,6 +71,40 @@ function NavLink({
   );
 }
 
+function OptioButton({ onClose }: { onClose?: () => void }) {
+  const { togglePanel, status } = useOptioChatStore();
+  const statusColor =
+    status === "unavailable" || status === "error"
+      ? "bg-error"
+      : status === "connecting"
+        ? "bg-warning"
+        : "bg-success";
+
+  return (
+    <button
+      onClick={() => {
+        togglePanel();
+        onClose?.();
+      }}
+      className={cn(
+        "w-full flex items-center gap-2.5 py-2 px-2.5 rounded-lg text-[13px] font-medium transition-all duration-150",
+        "text-text-muted hover:bg-primary/10 hover:text-text",
+      )}
+    >
+      <div className="relative">
+        <Bot className="w-4 h-4 shrink-0 text-primary" />
+        <span
+          className={cn(
+            "absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full border border-bg",
+            statusColor,
+          )}
+        />
+      </div>
+      Ask Optio
+    </button>
+  );
+}
+
 export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => void }) {
   const pathname = usePathname();
 
@@ -112,6 +148,9 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
           ))}
         </div>
       </nav>
+      <div className="border-t border-border/50 px-2.5 py-2">
+        <OptioButton onClose={onClose} />
+      </div>
       <div className="border-t border-border/50 px-2.5 py-2.5">
         <UserMenu />
       </div>

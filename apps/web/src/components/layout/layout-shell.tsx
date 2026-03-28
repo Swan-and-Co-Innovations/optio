@@ -7,6 +7,7 @@ import { GlobalWebSocketProvider } from "./ws-provider";
 import { SetupCheck } from "./setup-check";
 import { ThemeProvider } from "./theme-provider";
 import { ThemedToaster } from "./themed-toaster";
+import { OptioChatPanel } from "@/components/optio-chat/optio-chat-panel.js";
 
 export function LayoutShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -51,6 +52,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
             </div>
             <main className="flex-1 overflow-auto">{children}</main>
           </div>
+          <OptioChatPanel />
         </div>
       )}
       <ThemedToaster />

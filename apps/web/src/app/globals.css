@@ -440,6 +440,28 @@ html.light .recharts-custom-tooltip {
 }
 
 /* ──────────────────────────────────────
+   Optio Chat Panel
+   ────────────────────────────────────── */
+
+/* Backdrop fade */
+.optio-panel-backdrop {
+  animation: fade-in 0.2s ease both;
+}
+
+/* Markdown-like styling for chat responses */
+.optio-chat-markdown code {
+  font-family: var(--font-mono);
+  font-size: 0.8em;
+  padding: 0.15em 0.35em;
+  border-radius: 0.25rem;
+  background: var(--color-bg-hover);
+}
+
+.optio-chat-markdown strong {
+  font-weight: 600;
+}
+
+/* ──────────────────────────────────────
    Respect reduced motion preferences
    ────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {

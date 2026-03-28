@@ -2,7 +2,7 @@
 
 import { usePageTitle } from "@/hooks/use-page-title";
 import { useDashboardData } from "@/hooks/use-dashboard-data";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, MessageSquare } from "lucide-react";
 import {
   PipelineStatsBar,
   UsagePanel,
@@ -12,6 +12,7 @@ import {
   PodsList,
   WelcomeHero,
 } from "@/components/dashboard";
+import { useOptioChatStore } from "@/components/optio-chat/optio-chat-store.js";
 
 export default function OverviewPage() {
   usePageTitle("Overview");
@@ -106,6 +107,8 @@ export default function OverviewPage() {
 
       <PipelineStatsBar taskStats={taskStats} />
 
+      <DashboardOptioPrompt failedCount={taskStats?.failed ?? 0} />
+
       <UsagePanel usage={usage} />
 
       <ClusterSummary
@@ -127,5 +130,27 @@ export default function OverviewPage() {
         />
       </div>
     </div>
+  );
+}
+
+function DashboardOptioPrompt({ failedCount }: { failedCount: number }) {
+  const openWithPrefill = useOptioChatStore((s) => s.openWithPrefill);
+
+  if (failedCount === 0) return null;
+
+  return (
+    <button
+      onClick={() =>
+        openWithPrefill(
+          `${failedCount} task${failedCount === 1 ? "" : "s"} failed today. Can you help me understand what went wrong?`,
+        )
+      }
+      className="w-full rounded-md border border-warning/20 bg-warning/5 px-4 py-3 flex items-center gap-3 hover:bg-warning/10 transition-colors text-left group"
+    >
+      <MessageSquare className="w-4 h-4 text-warning/60 shrink-0 group-hover:text-warning transition-colors" />
+      <span className="text-sm text-warning/80 group-hover:text-warning transition-colors">
+        {failedCount} task{failedCount === 1 ? "" : "s"} failed today &mdash; ask Optio to help?
+      </span>
+    </button>
   );
 }

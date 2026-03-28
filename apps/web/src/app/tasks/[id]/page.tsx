@@ -29,8 +29,10 @@ import {
   Key,
   Check,
   Copy,
+  MessageSquare,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useOptioChatStore } from "@/components/optio-chat/optio-chat-store.js";
 
 export default function TaskDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -46,6 +48,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
   const [tokenSaving, setTokenSaving] = useState(false);
   const [dependents, setDependents] = useState<any[]>([]);
   const [showCreateSubtask, setShowCreateSubtask] = useState(false);
+  const openWithPrefill = useOptioChatStore((s) => s.openWithPrefill);
   const [newSubtask, setNewSubtask] = useState({
     title: "",
     prompt: "",
@@ -256,6 +259,19 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
                 Attempt Resume
               </button>
             )}
+            <button
+              onClick={() => {
+                const ctx = task.errorMessage
+                  ? `Task "${task.title}" (${task.state}) failed with: ${task.errorMessage}`
+                  : `Task "${task.title}" is in state: ${task.state}`;
+                openWithPrefill(ctx);
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary/10 text-primary text-xs hover:bg-primary/20 transition-colors"
+              title="Ask Optio for help with this task"
+            >
+              <MessageSquare className="w-3 h-3" />
+              Ask Optio
+            </button>
             <button
               onClick={handleForceRedo}
               disabled={actionLoading}
