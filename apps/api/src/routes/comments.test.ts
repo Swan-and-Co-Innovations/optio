@@ -24,6 +24,12 @@ vi.mock("../services/task-service.js", () => ({
   getTaskEvents: (...args: unknown[]) => mockGetTaskEvents(...args),
 }));
 
+const mockGetActionsForTask = vi.fn();
+
+vi.mock("../services/optio-action-service.js", () => ({
+  getActionsForTask: (...args: unknown[]) => mockGetActionsForTask(...args),
+}));
+
 import { commentRoutes } from "./comments.js";
 
 // ─── Helpers ───
@@ -190,7 +196,7 @@ describe("GET /api/tasks/:id/activity", () => {
     app = await buildTestApp();
   });
 
-  it("returns interleaved activity feed", async () => {
+  it("returns interleaved activity feed with optio actions", async () => {
     mockGetTask.mockResolvedValue({ id: "task-1" });
     mockListComments.mockResolvedValue([
       {
@@ -213,15 +219,28 @@ describe("GET /api/tasks/:id/activity", () => {
         createdAt: "2026-03-27T09:00:00Z",
       },
     ]);
+    mockGetActionsForTask.mockResolvedValue([
+      {
+        id: "oa-1",
+        action: "retry_task",
+        success: true,
+        params: { taskId: "task-1" },
+        result: { taskId: "task-1" },
+        user: { id: "u1", displayName: "Alice" },
+        createdAt: "2026-03-27T09:30:00Z",
+      },
+    ]);
 
     const res = await app.inject({ method: "GET", url: "/api/tasks/task-1/activity" });
 
     expect(res.statusCode).toBe(200);
     const body = res.json();
-    expect(body.activity).toHaveLength(2);
-    // Sorted by createdAt: event first (09:00), then comment (10:00)
+    expect(body.activity).toHaveLength(3);
+    // Sorted by createdAt: event (09:00), optio_action (09:30), comment (10:00)
     expect(body.activity[0].type).toBe("event");
-    expect(body.activity[1].type).toBe("comment");
+    expect(body.activity[1].type).toBe("optio_action");
+    expect(body.activity[1].action).toBe("retry_task");
+    expect(body.activity[2].type).toBe("comment");
   });
 });
 

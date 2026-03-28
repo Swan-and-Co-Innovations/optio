@@ -906,4 +906,41 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(data),
     }),
+
+  // Optio Actions (audit trail)
+  listOptioActions: (params?: {
+    userId?: string;
+    action?: string;
+    startDate?: string;
+    endDate?: string;
+    limit?: number;
+    offset?: number;
+  }) => {
+    const qs = new URLSearchParams();
+    if (params) {
+      for (const [key, val] of Object.entries(params)) {
+        if (val != null && val !== "") qs.set(key, String(val));
+      }
+    }
+    const query = qs.toString();
+    return request<{
+      actions: Array<{
+        id: string;
+        userId: string | null;
+        action: string;
+        params: Record<string, unknown> | null;
+        result: Record<string, unknown> | null;
+        success: boolean;
+        conversationSnippet: string | null;
+        workspaceId: string | null;
+        createdAt: string;
+        user?: { id: string; displayName: string; email: string; avatarUrl: string | null };
+      }>;
+      total: number;
+      limit: number;
+      offset: number;
+    }>(`/api/optio/actions${query ? `?${query}` : ""}`);
+  },
+
+  getOptioActionTypes: () => request<{ types: string[] }>("/api/optio/actions/types"),
 };

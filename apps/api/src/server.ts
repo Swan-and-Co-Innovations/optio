@@ -30,6 +30,7 @@ import { mcpServerRoutes } from "./routes/mcp-servers.js";
 import { skillRoutes } from "./routes/skills.js";
 import { optioRoutes } from "./routes/optio.js";
 import { optioSettingsRoutes } from "./routes/optio-settings.js";
+import { optioActionRoutes } from "./routes/optio-actions.js";
 import { logStreamWs } from "./ws/log-stream.js";
 import { eventsWs } from "./ws/events.js";
 import { sessionTerminalWs } from "./ws/session-terminal.js";
@@ -95,6 +96,7 @@ export async function buildServer() {
   await app.register(skillRoutes);
   await app.register(optioRoutes);
   await app.register(optioSettingsRoutes);
+  await app.register(optioActionRoutes);
 
   // WebSocket routes
   await app.register(logStreamWs);

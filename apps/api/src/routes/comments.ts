@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import * as commentService from "../services/comment-service.js";
 import * as taskService from "../services/task-service.js";
+import * as optioActionService from "../services/optio-action-service.js";
 
 const createCommentSchema = z.object({
   content: z.string().min(1).max(10000),
@@ -77,9 +78,10 @@ export async function commentRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string };
     const task = await taskService.getTask(id);
     if (!task) return reply.status(404).send({ error: "Task not found" });
-    const [comments, events] = await Promise.all([
+    const [comments, events, optioActions] = await Promise.all([
       commentService.listComments(id),
       taskService.getTaskEvents(id),
+      optioActionService.getActionsForTask(id),
     ]);
 
     const activity = [
@@ -101,6 +103,17 @@ export async function commentRoutes(app: FastifyInstance) {
         message: e.message,
         userId: e.userId,
         createdAt: e.createdAt,
+      })),
+      ...optioActions.map((a) => ({
+        type: "optio_action" as const,
+        id: a.id,
+        taskId: id,
+        action: a.action,
+        success: a.success,
+        params: a.params,
+        result: a.result,
+        user: a.user,
+        createdAt: a.createdAt,
       })),
     ].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 

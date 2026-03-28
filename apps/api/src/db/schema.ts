@@ -583,6 +583,29 @@ export const optioSettings = pgTable(
   (table) => [index("optio_settings_workspace_id_idx").on(table.workspaceId)],
 );
 
+// ── Optio Actions (audit trail) ───────────────────────────────────────────────
+
+export const optioActions = pgTable(
+  "optio_actions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id").references(() => users.id),
+    action: text("action").notNull(), // tool name, e.g. "retry_task", "bulk_cancel_active"
+    params: jsonb("params").$type<Record<string, unknown>>(), // sanitized tool call parameters
+    result: jsonb("result").$type<Record<string, unknown>>(), // outcome: affected IDs, error, etc.
+    success: boolean("success").notNull(),
+    conversationSnippet: text("conversation_snippet"), // optional: user message that triggered this
+    workspaceId: uuid("workspace_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("optio_actions_user_id_idx").on(table.userId),
+    index("optio_actions_action_idx").on(table.action),
+    index("optio_actions_created_at_idx").on(table.createdAt.desc()),
+    index("optio_actions_workspace_id_idx").on(table.workspaceId),
+  ],
+);
+
 export const promptTemplates = pgTable("prompt_templates", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull().unique(),

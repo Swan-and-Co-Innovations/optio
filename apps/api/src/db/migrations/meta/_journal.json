@@ -232,6 +232,13 @@
       "when": 1775750400000,
       "tag": "0032_optio_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1775836800000,
+      "tag": "0033_optio_actions_audit_trail",
+      "breakpoints": true
     }
   ]
 }
