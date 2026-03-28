@@ -16,4 +16,5 @@ export * from "./types/image.js";
 export * from "./error-classifier.js";
 export * from "./types/session.js";
 export * from "./types/mcp.js";
+export * from "./types/optio-chat.js";
 export * from "./utils/off-peak.js";
