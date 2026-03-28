@@ -11,6 +11,7 @@ import {
   type OptioPendingAction,
 } from "@/hooks/use-optio-chat";
 import { ActionCard } from "./action-card.js";
+import { ChatMarkdown } from "./chat-markdown.js";
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:4000";
 
@@ -320,9 +321,7 @@ export function OptioChatPanel() {
                         onDeny={handleDeny}
                       />
                     ) : (
-                      <div className="text-sm whitespace-pre-wrap leading-relaxed text-text">
-                        {msg.content}
-                      </div>
+                      <ChatMarkdown content={msg.content} />
                     )}
                   </div>
                 </div>
