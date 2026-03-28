@@ -129,6 +129,8 @@ export const tasks = pgTable(
     index("tasks_parent_task_id_idx").on(table.parentTaskId),
     index("tasks_created_at_idx").on(table.createdAt.desc()),
     index("tasks_workspace_id_idx").on(table.workspaceId),
+    index("tasks_workspace_state_idx").on(table.workspaceId, table.state),
+    index("tasks_workspace_updated_idx").on(table.workspaceId, table.updatedAt),
   ],
 );
 
@@ -184,7 +186,10 @@ export const secrets = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [unique("secrets_name_scope_ws_key").on(table.name, table.scope, table.workspaceId)],
+  (table) => [
+    unique("secrets_name_scope_ws_key").on(table.name, table.scope, table.workspaceId),
+    index("secrets_workspace_id_idx").on(table.workspaceId),
+  ],
 );
 
 export const repos = pgTable(
@@ -233,7 +238,10 @@ export const repos = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [unique("repos_url_workspace_key").on(table.repoUrl, table.workspaceId)],
+  (table) => [
+    unique("repos_url_workspace_key").on(table.repoUrl, table.workspaceId),
+    index("repos_workspace_id_idx").on(table.workspaceId),
+  ],
 );
 
 export const ticketProviders = pgTable("ticket_providers", {
@@ -269,7 +277,10 @@ export const repoPods = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [index("repo_pods_repo_url_idx").on(table.repoUrl)],
+  (table) => [
+    index("repo_pods_repo_url_idx").on(table.repoUrl),
+    index("repo_pods_workspace_id_idx").on(table.workspaceId),
+  ],
 );
 
 export const podHealthEvents = pgTable("pod_health_events", {
@@ -300,18 +311,22 @@ export const webhookEventEnum = pgEnum("webhook_event", [
   "review.completed",
 ]);
 
-export const webhooks = pgTable("webhooks", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  url: text("url").notNull(),
-  workspaceId: uuid("workspace_id"), // nullable for backward compat
-  events: jsonb("events").$type<string[]>().notNull(), // array of webhook_event values
-  secret: text("secret"), // HMAC-SHA256 signing secret (plaintext; only used for outbound signing)
-  description: text("description"),
-  active: boolean("active").notNull().default(true),
-  createdBy: uuid("created_by"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const webhooks = pgTable(
+  "webhooks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    url: text("url").notNull(),
+    workspaceId: uuid("workspace_id"), // nullable for backward compat
+    events: jsonb("events").$type<string[]>().notNull(), // array of webhook_event values
+    secret: text("secret"), // HMAC-SHA256 signing secret (plaintext; only used for outbound signing)
+    description: text("description"),
+    active: boolean("active").notNull().default(true),
+    createdBy: uuid("created_by"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("webhooks_workspace_id_idx").on(table.workspaceId)],
+);
 
 export const webhookDeliveries = pgTable("webhook_deliveries", {
   id: uuid("id").primaryKey().defaultRandom(),
