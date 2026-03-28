@@ -9,6 +9,10 @@ export async function dependencyRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string };
     const task = await taskService.getTask(id);
     if (!task) return reply.status(404).send({ error: "Task not found" });
+    const wsId = req.user?.workspaceId;
+    if (wsId && task.workspaceId !== wsId) {
+      return reply.status(404).send({ error: "Task not found" });
+    }
     const dependencies = await dependencyService.getDependencies(id);
     reply.send({ dependencies });
   });
@@ -18,6 +22,10 @@ export async function dependencyRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string };
     const task = await taskService.getTask(id);
     if (!task) return reply.status(404).send({ error: "Task not found" });
+    const wsId = req.user?.workspaceId;
+    if (wsId && task.workspaceId !== wsId) {
+      return reply.status(404).send({ error: "Task not found" });
+    }
     const dependents = await dependencyService.getDependents(id);
     reply.send({ dependents });
   });
@@ -29,6 +37,10 @@ export async function dependencyRoutes(app: FastifyInstance) {
 
     const task = await taskService.getTask(id);
     if (!task) return reply.status(404).send({ error: "Task not found" });
+    const wsId = req.user?.workspaceId;
+    if (wsId && task.workspaceId !== wsId) {
+      return reply.status(404).send({ error: "Task not found" });
+    }
 
     try {
       await dependencyService.addDependencies(id, body.dependsOnIds);
@@ -41,6 +53,12 @@ export async function dependencyRoutes(app: FastifyInstance) {
   // Remove a dependency
   app.delete("/api/tasks/:id/dependencies/:depTaskId", async (req, reply) => {
     const { id, depTaskId } = req.params as { id: string; depTaskId: string };
+    const task = await taskService.getTask(id);
+    if (!task) return reply.status(404).send({ error: "Task not found" });
+    const wsId = req.user?.workspaceId;
+    if (wsId && task.workspaceId !== wsId) {
+      return reply.status(404).send({ error: "Task not found" });
+    }
     const removed = await dependencyService.removeDependency(id, depTaskId);
     if (!removed) return reply.status(404).send({ error: "Dependency not found" });
     reply.status(204).send();

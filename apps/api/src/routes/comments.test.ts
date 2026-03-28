@@ -111,6 +111,7 @@ describe("PATCH /api/tasks/:taskId/comments/:commentId", () => {
   });
 
   it("updates a comment", async () => {
+    mockGetTask.mockResolvedValue({ id: "task-1", workspaceId: "ws-1" });
     mockUpdateComment.mockResolvedValue({ id: "c-1", content: "Updated" });
 
     const res = await app.inject({
@@ -124,6 +125,7 @@ describe("PATCH /api/tasks/:taskId/comments/:commentId", () => {
   });
 
   it("returns 404 for nonexistent comment", async () => {
+    mockGetTask.mockResolvedValue({ id: "task-1", workspaceId: "ws-1" });
     mockUpdateComment.mockRejectedValue(new Error("Comment not found"));
 
     const res = await app.inject({
@@ -136,6 +138,7 @@ describe("PATCH /api/tasks/:taskId/comments/:commentId", () => {
   });
 
   it("returns 403 for unauthorized edit", async () => {
+    mockGetTask.mockResolvedValue({ id: "task-1", workspaceId: "ws-1" });
     mockUpdateComment.mockRejectedValue(new Error("Not authorized to edit"));
 
     const res = await app.inject({
@@ -157,6 +160,7 @@ describe("DELETE /api/tasks/:taskId/comments/:commentId", () => {
   });
 
   it("deletes a comment", async () => {
+    mockGetTask.mockResolvedValue({ id: "task-1", workspaceId: "ws-1" });
     mockDeleteComment.mockResolvedValue(undefined);
 
     const res = await app.inject({ method: "DELETE", url: "/api/tasks/task-1/comments/c-1" });
@@ -166,6 +170,7 @@ describe("DELETE /api/tasks/:taskId/comments/:commentId", () => {
   });
 
   it("returns 404 for nonexistent comment", async () => {
+    mockGetTask.mockResolvedValue({ id: "task-1", workspaceId: "ws-1" });
     mockDeleteComment.mockRejectedValue(new Error("Comment not found"));
 
     const res = await app.inject({
@@ -217,5 +222,39 @@ describe("GET /api/tasks/:id/activity", () => {
     // Sorted by createdAt: event first (09:00), then comment (10:00)
     expect(body.activity[0].type).toBe("event");
     expect(body.activity[1].type).toBe("comment");
+  });
+});
+
+describe("workspace scoping", () => {
+  let app: FastifyInstance;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    app = await buildTestApp();
+  });
+
+  it("returns 404 for PATCH comment on task in different workspace", async () => {
+    mockGetTask.mockResolvedValue({ id: "task-1", workspaceId: "ws-other" });
+
+    const res = await app.inject({
+      method: "PATCH",
+      url: "/api/tasks/task-1/comments/c-1",
+      payload: { content: "Updated" },
+    });
+
+    expect(res.statusCode).toBe(404);
+    expect(mockUpdateComment).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 for DELETE comment on task in different workspace", async () => {
+    mockGetTask.mockResolvedValue({ id: "task-1", workspaceId: "ws-other" });
+
+    const res = await app.inject({
+      method: "DELETE",
+      url: "/api/tasks/task-1/comments/c-1",
+    });
+
+    expect(res.statusCode).toBe(404);
+    expect(mockDeleteComment).not.toHaveBeenCalled();
   });
 });

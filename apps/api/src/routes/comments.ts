@@ -33,7 +33,13 @@ export async function commentRoutes(app: FastifyInstance) {
 
   // Update a comment
   app.patch("/api/tasks/:taskId/comments/:commentId", async (req, reply) => {
-    const { commentId } = req.params as { taskId: string; commentId: string };
+    const { taskId, commentId } = req.params as { taskId: string; commentId: string };
+    const task = await taskService.getTask(taskId);
+    if (!task) return reply.status(404).send({ error: "Task not found" });
+    const wsId = req.user?.workspaceId;
+    if (wsId && task.workspaceId !== wsId) {
+      return reply.status(404).send({ error: "Task not found" });
+    }
     const { content } = updateCommentSchema.parse(req.body);
     try {
       const comment = await commentService.updateComment(commentId, content, req.user?.id);
@@ -48,7 +54,13 @@ export async function commentRoutes(app: FastifyInstance) {
 
   // Delete a comment
   app.delete("/api/tasks/:taskId/comments/:commentId", async (req, reply) => {
-    const { commentId } = req.params as { taskId: string; commentId: string };
+    const { taskId, commentId } = req.params as { taskId: string; commentId: string };
+    const task = await taskService.getTask(taskId);
+    if (!task) return reply.status(404).send({ error: "Task not found" });
+    const wsId = req.user?.workspaceId;
+    if (wsId && task.workspaceId !== wsId) {
+      return reply.status(404).send({ error: "Task not found" });
+    }
     try {
       await commentService.deleteComment(commentId, req.user?.id);
       reply.status(204).send();

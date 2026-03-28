@@ -25,9 +25,15 @@ import { dependencyRoutes } from "./dependencies.js";
 
 // ─── Helpers ───
 
-async function buildTestApp(): Promise<FastifyInstance> {
+async function buildTestApp(user?: { id: string; workspaceId: string }): Promise<FastifyInstance> {
   const app = Fastify({ logger: false });
   app.decorateRequest("user", undefined as any);
+  if (user) {
+    app.addHook("preHandler", (req, _reply, done) => {
+      (req as any).user = user;
+      done();
+    });
+  }
   await dependencyRoutes(app);
   await app.ready();
   return app;
@@ -137,6 +143,7 @@ describe("DELETE /api/tasks/:id/dependencies/:depTaskId", () => {
   });
 
   it("removes a dependency", async () => {
+    mockGetTask.mockResolvedValue({ id: "task-1" });
     mockRemoveDependency.mockResolvedValue(true);
 
     const res = await app.inject({
@@ -148,6 +155,7 @@ describe("DELETE /api/tasks/:id/dependencies/:depTaskId", () => {
   });
 
   it("returns 404 for nonexistent dependency", async () => {
+    mockGetTask.mockResolvedValue({ id: "task-1" });
     mockRemoveDependency.mockResolvedValue(false);
 
     const res = await app.inject({
@@ -156,5 +164,66 @@ describe("DELETE /api/tasks/:id/dependencies/:depTaskId", () => {
     });
 
     expect(res.statusCode).toBe(404);
+  });
+});
+
+describe("workspace scoping", () => {
+  let app: FastifyInstance;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    app = await buildTestApp({ id: "user-1", workspaceId: "ws-1" });
+  });
+
+  it("returns 404 for task in different workspace (GET dependencies)", async () => {
+    mockGetTask.mockResolvedValue({ id: "task-1", workspaceId: "ws-other" });
+
+    const res = await app.inject({ method: "GET", url: "/api/tasks/task-1/dependencies" });
+
+    expect(res.statusCode).toBe(404);
+    expect(mockGetDependencies).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 for task in different workspace (GET dependents)", async () => {
+    mockGetTask.mockResolvedValue({ id: "task-1", workspaceId: "ws-other" });
+
+    const res = await app.inject({ method: "GET", url: "/api/tasks/task-1/dependents" });
+
+    expect(res.statusCode).toBe(404);
+    expect(mockGetDependents).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 for task in different workspace (POST dependencies)", async () => {
+    mockGetTask.mockResolvedValue({ id: "task-1", workspaceId: "ws-other" });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/tasks/task-1/dependencies",
+      payload: { dependsOnIds: ["00000000-0000-0000-0000-000000000001"] },
+    });
+
+    expect(res.statusCode).toBe(404);
+    expect(mockAddDependencies).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 for task in different workspace (DELETE dependency)", async () => {
+    mockGetTask.mockResolvedValue({ id: "task-1", workspaceId: "ws-other" });
+
+    const res = await app.inject({
+      method: "DELETE",
+      url: "/api/tasks/task-1/dependencies/task-2",
+    });
+
+    expect(res.statusCode).toBe(404);
+    expect(mockRemoveDependency).not.toHaveBeenCalled();
+  });
+
+  it("allows access for task in same workspace", async () => {
+    mockGetTask.mockResolvedValue({ id: "task-1", workspaceId: "ws-1" });
+    mockGetDependencies.mockResolvedValue([]);
+
+    const res = await app.inject({ method: "GET", url: "/api/tasks/task-1/dependencies" });
+
+    expect(res.statusCode).toBe(200);
   });
 });
