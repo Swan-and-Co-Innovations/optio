@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import Fastify from "fastify";
 import type { FastifyInstance } from "fastify";
 
@@ -18,7 +18,7 @@ vi.mock("@kubernetes/client-node", () => {
   };
 });
 
-import { optioRoutes } from "./optio.js";
+import { optioRoutes, _resetCache } from "./optio.js";
 
 // ─── Helpers ───
 
@@ -31,10 +31,33 @@ async function buildTestApp(): Promise<FastifyInstance> {
 
 describe("GET /api/optio/status", () => {
   let app: FastifyInstance;
+  const originalEnv = process.env.OPTIO_POD_ENABLED;
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    _resetCache();
+    process.env.OPTIO_POD_ENABLED = "true";
     app = await buildTestApp();
+  });
+
+  afterEach(() => {
+    if (originalEnv === undefined) {
+      delete process.env.OPTIO_POD_ENABLED;
+    } else {
+      process.env.OPTIO_POD_ENABLED = originalEnv;
+    }
+  });
+
+  it("returns enabled:false when OPTIO_POD_ENABLED is not set", async () => {
+    delete process.env.OPTIO_POD_ENABLED;
+
+    const res = await app.inject({ method: "GET", url: "/api/optio/status" });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.ready).toBe(false);
+    expect(body.podName).toBeNull();
+    expect(body.enabled).toBe(false);
   });
 
   it("returns ready:true when optio pod is running", async () => {
@@ -43,12 +66,8 @@ describe("GET /api/optio/status", () => {
         {
           metadata: { name: "optio-optio-abc123" },
           status: {
-            containerStatuses: [
-              {
-                state: { running: { startedAt: "2026-01-01T00:00:00Z" } },
-                ready: true,
-              },
-            ],
+            phase: "Running",
+            conditions: [{ type: "Ready", status: "True" }],
           },
         },
       ],
@@ -60,6 +79,7 @@ describe("GET /api/optio/status", () => {
     const body = res.json();
     expect(body.ready).toBe(true);
     expect(body.podName).toBe("optio-optio-abc123");
+    expect(body.enabled).toBe(true);
   });
 
   it("returns ready:false when no pods found", async () => {
@@ -79,12 +99,8 @@ describe("GET /api/optio/status", () => {
         {
           metadata: { name: "optio-optio-abc123" },
           status: {
-            containerStatuses: [
-              {
-                state: { waiting: { reason: "ContainerCreating" } },
-                ready: false,
-              },
-            ],
+            phase: "Pending",
+            conditions: [{ type: "Ready", status: "False" }],
           },
         },
       ],

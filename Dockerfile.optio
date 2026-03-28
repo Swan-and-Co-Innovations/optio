@@ -1,5 +1,6 @@
 # Optio operations assistant pod.
 # Lightweight image: Claude Code + HTTP tools. No repo/language tooling needed.
+
 FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive

@@ -36,13 +36,12 @@ echo "   Building optio-go..."
 docker build -t optio-go:latest -f images/go.Dockerfile . -q &
 echo "   Building optio-rust..."
 docker build -t optio-rust:latest -f images/rust.Dockerfile . -q &
+echo "   Building optio-optio (operations assistant)..."
+docker build -t optio-optio:latest -f Dockerfile.optio . -q &
 wait
 echo "   Building optio-full..."
 docker build -t optio-full:latest -f images/full.Dockerfile . -q
 echo "   All agent images built."
-
-echo "   Building optio-optio (operations assistant)..."
-docker build -t optio-optio:latest -f Dockerfile.optio . -q
 
 echo "[3/6] Building API and Web images..."
 docker build -t optio-api:latest -f Dockerfile.api . -q
