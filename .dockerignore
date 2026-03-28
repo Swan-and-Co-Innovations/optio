@@ -4,3 +4,5 @@ dist
 .next
 .turbo
 *.tsbuildinfo
+.env
+.values.local.yaml
