@@ -90,7 +90,7 @@ async function buildTestApp(): Promise<FastifyInstance> {
   const app = Fastify({ logger: false });
   app.decorateRequest("user", undefined as any);
   app.addHook("preHandler", (req, _reply, done) => {
-    (req as any).user = { workspaceId: null };
+    (req as any).user = { workspaceId: null, workspaceRole: "admin" };
     done();
   });
   await clusterRoutes(app);

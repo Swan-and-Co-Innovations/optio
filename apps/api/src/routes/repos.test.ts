@@ -36,7 +36,7 @@ async function buildTestApp(): Promise<FastifyInstance> {
   const app = Fastify({ logger: false });
   app.decorateRequest("user", undefined as any);
   app.addHook("preHandler", (req, _reply, done) => {
-    (req as any).user = { workspaceId: "ws-1" };
+    (req as any).user = { workspaceId: "ws-1", workspaceRole: "admin" };
     done();
   });
   await repoRoutes(app);

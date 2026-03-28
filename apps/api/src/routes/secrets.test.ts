@@ -22,7 +22,7 @@ async function buildTestApp(): Promise<FastifyInstance> {
   const app = Fastify({ logger: false });
   app.decorateRequest("user", undefined as any);
   app.addHook("preHandler", (req, _reply, done) => {
-    (req as any).user = { workspaceId: "ws-1" };
+    (req as any).user = { workspaceId: "ws-1", workspaceRole: "admin" };
     done();
   });
   await secretRoutes(app);
@@ -78,9 +78,6 @@ describe("POST /api/secrets", () => {
       payload: { name: "MY_SECRET", value: "super-secret-value" },
     });
 
-    if (res.statusCode !== 201) {
-      console.error("UNEXPECTED STATUS:", res.statusCode, "BODY:", res.body);
-    }
     expect(res.statusCode).toBe(201);
     expect(res.json()).toEqual({ name: "MY_SECRET", scope: "global" });
     expect(mockStoreSecret).toHaveBeenCalledWith(

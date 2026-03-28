@@ -21,7 +21,7 @@ async function buildTestApp(): Promise<FastifyInstance> {
   // Decorate request with user (auth middleware adds this)
   app.decorateRequest("user", undefined as any);
   app.addHook("preHandler", (req, _reply, done) => {
-    (req as any).user = { workspaceId: "ws-1" };
+    (req as any).user = { workspaceId: "ws-1", workspaceRole: "admin" };
     done();
   });
   await analyticsRoutes(app);
@@ -94,9 +94,6 @@ describe("GET /api/analytics/costs", () => {
       url: "/api/analytics/costs",
     });
 
-    if (res.statusCode !== 200) {
-      console.error("UNEXPECTED STATUS:", res.statusCode, "BODY:", res.body);
-    }
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.summary).toBeDefined();

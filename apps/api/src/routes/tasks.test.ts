@@ -74,7 +74,7 @@ async function buildTestApp(): Promise<FastifyInstance> {
   const app = Fastify({ logger: false });
   app.decorateRequest("user", undefined as any);
   app.addHook("preHandler", (req, _reply, done) => {
-    (req as any).user = { id: "user-1", workspaceId: "ws-1" };
+    (req as any).user = { id: "user-1", workspaceId: "ws-1", workspaceRole: "admin" };
     done();
   });
   await taskRoutes(app);
@@ -221,9 +221,6 @@ describe("POST /api/tasks", () => {
       },
     });
 
-    if (res.statusCode !== 201) {
-      console.error("UNEXPECTED STATUS:", res.statusCode, "BODY:", res.body);
-    }
     expect(res.statusCode).toBe(201);
     expect(mockCreateTask).toHaveBeenCalledWith(
       expect.objectContaining({
