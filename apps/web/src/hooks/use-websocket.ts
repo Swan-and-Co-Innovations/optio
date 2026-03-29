@@ -58,6 +58,10 @@ export function useGlobalWebSocket() {
         timestamp: event.timestamp,
       });
 
+      // Dispatch a DOM event so the dashboard data hook can immediately
+      // update the usage panel without waiting for the 5-minute polling interval
+      window.dispatchEvent(new Event("optio:auth-failed"));
+
       if (typeof Notification !== "undefined" && Notification.permission === "granted") {
         new Notification("Optio: Authentication Failed", {
           body: "Claude Code OAuth token expired — tasks will fail until re-authenticated.",

@@ -138,6 +138,16 @@ export function invalidateCredentialsCache(): void {
   lastRead = 0;
 }
 
+/**
+ * Invalidate the cached usage data so the next call to getClaudeUsage() fetches fresh results.
+ * Called when an auth failure is detected (e.g., task fails with expired token) to prevent
+ * stale "healthy" usage data from hiding the expiration.
+ */
+export function invalidateUsageCache(): void {
+  cachedUsage = null;
+  usageCacheTime = 0;
+}
+
 // --- Claude Max usage tracking ---
 
 export interface UsageBucket {

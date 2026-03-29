@@ -624,6 +624,11 @@ export function startTaskWorker() {
             result.error &&
             /OAuth token|authentication_failed|token.*expired/i.test(result.error)
           ) {
+            // Invalidate the usage cache so subsequent API calls return fresh data
+            // instead of stale "healthy" results that hide the expiration
+            const { invalidateUsageCache } = await import("../services/auth-service.js");
+            invalidateUsageCache();
+
             await publishEvent({
               type: "auth:failed",
               message:
