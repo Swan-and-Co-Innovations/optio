@@ -1,8 +1,9 @@
 # Optio Helm Chart — Recommended Production Values
 #
-# Usage:
-#   helm install optio helm/optio -n optio --create-namespace \
-#     -f helm/optio/values.production.yaml \
+# Install from GHCR (released chart):
+#   helm install optio oci://ghcr.io/jonwiggins/optio --version 1.0.0 \
+#     -n optio --create-namespace \
+#     -f values.production.yaml \
 #     --set encryption.key=<generated-key> \
 #     --set auth.github.clientId=<id> \
 #     --set auth.github.clientSecret=<secret> \
@@ -10,12 +11,22 @@
 #     --set externalRedis.url=<redis-url> \
 #     --set publicUrl=https://optio.example.com
 #
+# Or from source:
+#   helm install optio helm/optio -n optio --create-namespace \
+#     -f helm/optio/values.production.yaml \
+#     --set encryption.key=<generated-key> \
+#     ...
+#
+# Upgrade to a new release:
+#   helm upgrade optio oci://ghcr.io/jonwiggins/optio --version 1.1.0 -n optio
+#
 # Generate encryption key: openssl rand -hex 32
 
 # --- API Server ---
 api:
   replicas: 2
   image:
+    repository: ghcr.io/jonwiggins/optio-api
     pullPolicy: IfNotPresent
   resources:
     requests:
@@ -40,6 +51,7 @@ api:
 web:
   replicas: 2
   image:
+    repository: ghcr.io/jonwiggins/optio-web
     pullPolicy: IfNotPresent
   resources:
     requests:
@@ -58,9 +70,15 @@ web:
     maxReplicas: 4
     targetCPUUtilizationPercentage: 70
 
+# --- Optio operations assistant ---
+optio:
+  image:
+    repository: ghcr.io/jonwiggins/optio-optio
+
 # --- Agent containers ---
 agent:
   image:
+    repository: ghcr.io/jonwiggins/optio-agent-base
     pullPolicy: IfNotPresent
   imagePullPolicy: IfNotPresent
 

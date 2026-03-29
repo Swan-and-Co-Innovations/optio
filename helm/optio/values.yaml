@@ -2,13 +2,19 @@
 #
 # For production deployments, see values.production.yaml for recommended overrides.
 # Required values are marked with "# REQUIRED" below.
+#
+# Image repositories default to short names for local dev (pullPolicy: Never).
+# For registry deployments, override with full GHCR paths, e.g.:
+#   api.image.repository: ghcr.io/jonwiggins/optio-api
+#   web.image.repository: ghcr.io/jonwiggins/optio-web
+# Or install a released chart: helm install optio oci://ghcr.io/jonwiggins/optio
 
 # ──────────────────────────────────────────────────────────────────────────────
 # API Server
 # ──────────────────────────────────────────────────────────────────────────────
 api:
   image:
-    repository: optio-api
+    repository: optio-api  # Registry: ghcr.io/jonwiggins/optio-api
     tag: latest
     pullPolicy: IfNotPresent
   replicas: 1
@@ -56,7 +62,7 @@ api:
 # ──────────────────────────────────────────────────────────────────────────────
 web:
   image:
-    repository: optio-web
+    repository: optio-web  # Registry: ghcr.io/jonwiggins/optio-web
     tag: latest
     pullPolicy: IfNotPresent
   replicas: 1
@@ -94,7 +100,7 @@ web:
 optio:
   enabled: true
   image:
-    repository: optio-optio
+    repository: optio-optio  # Registry: ghcr.io/jonwiggins/optio-optio
     tag: latest
     pullPolicy: IfNotPresent
   resources:
@@ -110,7 +116,7 @@ optio:
 # ──────────────────────────────────────────────────────────────────────────────
 agent:
   image:
-    repository: optio-base  # Local dev default; override for registry (e.g. ghcr.io/org/optio-agent-node)
+    repository: optio-base  # Registry: ghcr.io/jonwiggins/optio-agent-base (or -node, -python, -go, -rust, -full)
     tag: latest
     pullPolicy: Never  # Use "IfNotPresent" or "Always" for registry images
   imagePullPolicy: Never  # Use "IfNotPresent" or "Always" for registry images
