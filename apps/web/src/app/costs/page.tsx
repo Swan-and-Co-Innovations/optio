@@ -41,7 +41,7 @@ const PERIOD_OPTIONS = [
 ];
 
 const REPO_COLORS = [
-  "#00d4a8", // teal
+  "#7c3aed", // teal
   "#60a5fa", // sky
   "#34d399", // emerald
   "#f0a040", // amber
@@ -52,7 +52,7 @@ const REPO_COLORS = [
 ];
 
 const MODEL_COLORS: Record<string, string> = {
-  opus: "#00d4a8",
+  opus: "#7c3aed",
   sonnet: "#60a5fa",
   haiku: "#34d399",
   unknown: "#807c88",
@@ -399,8 +399,8 @@ export default function CostsPage() {
             <AreaChart data={dailyCosts}>
               <defs>
                 <linearGradient id="costGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#00d4a8" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#00d4a8" stopOpacity={0} />
+                  <stop offset="5%" stopColor="#7c3aed" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#7c3aed" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
@@ -425,7 +425,7 @@ export default function CostsPage() {
                 type="monotone"
                 dataKey="cost"
                 name="Cost"
-                stroke="#00d4a8"
+                stroke="#7c3aed"
                 fill="url(#costGradient)"
                 strokeWidth={2}
                 animationDuration={800}
@@ -547,7 +547,7 @@ export default function CostsPage() {
                     dataKey="value"
                   >
                     {costByType.map((_, i) => (
-                      <Cell key={i} fill={i === 0 ? "#00d4a8" : "#60a5fa"} stroke="none" />
+                      <Cell key={i} fill={i === 0 ? "#7c3aed" : "#60a5fa"} stroke="none" />
                     ))}
                   </Pie>
                   <Tooltip
@@ -566,7 +566,7 @@ export default function CostsPage() {
                   <div key={t.taskType} className="flex items-center gap-2">
                     <div
                       className="w-2.5 h-2.5 rounded-full"
-                      style={{ backgroundColor: i === 0 ? "#00d4a8" : "#60a5fa" }}
+                      style={{ backgroundColor: i === 0 ? "#7c3aed" : "#60a5fa" }}
                     />
                     <span className="text-xs text-text-muted">
                       {t.taskType} — {formatCost(t.totalCost)} ({t.taskCount})
