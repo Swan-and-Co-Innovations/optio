@@ -288,7 +288,10 @@ gatewayAPI:
     #       - name: optio-tls
   # Hostname for the Gateway and HTTPRoute. Leave empty for wildcard.
   hostname: ""
-  annotations: {}
+  # Annotations for the Gateway resource (e.g., cert-manager).
+  gatewayAnnotations: {}
+  # Annotations for the HTTPRoute resource (e.g., rate-limiting).
+  httpRouteAnnotations: {}
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Namespace

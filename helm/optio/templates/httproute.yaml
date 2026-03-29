@@ -1,3 +1,4 @@
+{{- include "optio.validateNetworking" . }}
 {{- if and .Values.gatewayAPI.enabled (.Capabilities.APIVersions.Has "gateway.networking.k8s.io/v1") }}
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
@@ -6,7 +7,7 @@ metadata:
   namespace: {{ .Values.namespace }}
   labels:
     {{- include "optio.labels" . | nindent 4 }}
-  {{- with .Values.gatewayAPI.annotations }}
+  {{- with .Values.gatewayAPI.httpRouteAnnotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
   {{- end }}
