@@ -105,6 +105,7 @@ export async function issueRoutes(app: FastifyInstance) {
             url: issue.html_url,
             labels,
             hasOptioLabel,
+            author: issue.user?.login ?? null,
             assignee: issue.assignee?.login,
             repo: {
               id: repo.id,

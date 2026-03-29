@@ -280,7 +280,8 @@ function IssuesBrowser() {
                       <GitBranch className="w-3 h-3" />
                       {issue.repo.fullName}
                     </span>
-                    {issue.assignee && <span>@{issue.assignee}</span>}
+                    {issue.author && <span>@{issue.author}</span>}
+                    {issue.assignee && <span>assignee: @{issue.assignee}</span>}
                     <span>{formatRelativeTime(issue.updatedAt)}</span>
                   </div>
                   {/* Labels */}

@@ -82,6 +82,110 @@ describe("GET /api/issues", () => {
     expect(res.json().error).toContain("No GitHub token");
   });
 
+  it("includes author username in issue response", async () => {
+    mockRetrieveSecret.mockResolvedValue("ghp_token");
+
+    // repos query returns one repo
+    const repoChain = {
+      from: vi.fn().mockReturnThis(),
+      where: vi.fn().mockResolvedValue([
+        {
+          id: "repo-1",
+          repoUrl: "https://github.com/org/repo",
+          fullName: "org/repo",
+          workspaceId: "ws-1",
+        },
+      ]),
+    };
+    // tasks query returns empty
+    const taskChain = {
+      from: vi.fn().mockReturnThis(),
+      where: vi.fn().mockResolvedValue([]),
+    };
+    mockDbSelect.mockReturnValueOnce(repoChain).mockReturnValueOnce(taskChain);
+
+    // Mock GitHub API response
+    const mockIssue = {
+      id: 1,
+      number: 42,
+      title: "Test issue",
+      body: "Test body",
+      state: "open",
+      html_url: "https://github.com/org/repo/issues/42",
+      labels: [],
+      user: { login: "testauthor" },
+      assignee: null,
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-02T00:00:00Z",
+    };
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve([mockIssue]),
+      }),
+    );
+
+    const res = await app.inject({ method: "GET", url: "/api/issues" });
+
+    expect(res.statusCode).toBe(200);
+    const { issues } = res.json();
+    expect(issues).toHaveLength(1);
+    expect(issues[0].author).toBe("testauthor");
+    expect(issues[0].number).toBe(42);
+  });
+
+  it("returns null author when issue has no user", async () => {
+    mockRetrieveSecret.mockResolvedValue("ghp_token");
+
+    const repoChain = {
+      from: vi.fn().mockReturnThis(),
+      where: vi.fn().mockResolvedValue([
+        {
+          id: "repo-1",
+          repoUrl: "https://github.com/org/repo",
+          fullName: "org/repo",
+          workspaceId: "ws-1",
+        },
+      ]),
+    };
+    const taskChain = {
+      from: vi.fn().mockReturnThis(),
+      where: vi.fn().mockResolvedValue([]),
+    };
+    mockDbSelect.mockReturnValueOnce(repoChain).mockReturnValueOnce(taskChain);
+
+    const mockIssue = {
+      id: 2,
+      number: 43,
+      title: "No author issue",
+      body: "",
+      state: "open",
+      html_url: "https://github.com/org/repo/issues/43",
+      labels: [],
+      user: null,
+      assignee: null,
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-02T00:00:00Z",
+    };
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve([mockIssue]),
+      }),
+    );
+
+    const res = await app.inject({ method: "GET", url: "/api/issues" });
+
+    expect(res.statusCode).toBe(200);
+    const { issues } = res.json();
+    expect(issues).toHaveLength(1);
+    expect(issues[0].author).toBeNull();
+  });
+
   it("returns empty issues when no repos are configured", async () => {
     mockRetrieveSecret.mockResolvedValue("ghp_token");
 
