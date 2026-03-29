@@ -108,9 +108,18 @@ export function useDashboardData() {
     refreshUsage();
     const interval = setInterval(refresh, 10000);
     const usageInterval = setInterval(refreshUsage, 5 * 60 * 1000);
+
+    // Listen for auth:failed WebSocket events (dispatched via DOM event from use-websocket)
+    // to immediately show the token renewal widget instead of waiting for the polling interval
+    const onAuthFailed = () => {
+      setUsage({ available: false, error: "OAuth token has expired" });
+    };
+    window.addEventListener("optio:auth-failed", onAuthFailed);
+
     return () => {
       clearInterval(interval);
       clearInterval(usageInterval);
+      window.removeEventListener("optio:auth-failed", onAuthFailed);
     };
   }, [refresh, refreshUsage]);
 
