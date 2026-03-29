@@ -8,9 +8,13 @@ WORKDIR /app
 # Copy workspace config
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json tsconfig.base.json ./
 
-# Copy package.json and tsconfig for workspace packages
+# Copy package.json for ALL workspace packages (pnpm needs full workspace graph)
+COPY apps/api/package.json apps/api/
 COPY apps/web/package.json apps/web/tsconfig.json apps/web/
 COPY packages/shared/package.json packages/shared/tsconfig.json packages/shared/
+COPY packages/agent-adapters/package.json packages/agent-adapters/
+COPY packages/container-runtime/package.json packages/container-runtime/
+COPY packages/ticket-providers/package.json packages/ticket-providers/
 
 # Install all dependencies (dev deps needed for build)
 RUN pnpm install --frozen-lockfile --prod=false
