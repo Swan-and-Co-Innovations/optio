@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@optio/shared": "workspace:*",
+    "@notionhq/client": "^2.2.15",
     "@octokit/rest": "^21.1.1",
     "@linear/sdk": "^37.0.0",
     "jira.js": "^4.0.0"

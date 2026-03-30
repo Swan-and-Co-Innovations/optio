@@ -342,7 +342,7 @@ packages/
                       error classifier, constants, normalize-repo-url
   container-runtime/  ContainerRuntime interface, DockerContainerRuntime, KubernetesContainerRuntime
   agent-adapters/     AgentAdapter interface, ClaudeCodeAdapter, CodexAdapter, CopilotAdapter
-  ticket-providers/   TicketProvider interface, GitHubTicketProvider, LinearTicketProvider, JiraTicketProvider
+  ticket-providers/   TicketProvider interface, GitHubTicketProvider, LinearTicketProvider, JiraTicketProvider, NotionTicketProvider
 
 Dockerfile.api        API server Docker image (tsx-based)
 Dockerfile.web        Web UI Docker image (Next.js production build)
@@ -622,7 +622,7 @@ Six BullMQ workers run as part of the API server:
 - Agent images are built locally — `setup-local.sh` handles this, but CI push to a registry is not yet configured
 - `setup-local.sh` installs `metrics-server` automatically; production clusters should install it separately
 - Workspace RBAC roles (admin/member/viewer) are in the schema but not fully enforced in all routes
-- Notion ticket provider is a stub (GitHub Issues, Linear, and Jira are implemented)
+- All four ticket providers are implemented (GitHub Issues, Linear, Jira, and Notion)
 - Some duplicate-numbered migration files exist from concurrent agent branches — the drizzle journal (`meta/_journal.json`) is authoritative
 - OAuth tokens from `claude setup-token` have limited scopes and may not support usage tracking (Keychain-extracted tokens have full scopes)
 - The API container runs via `tsx` (TypeScript execution) rather than compiled JS, since workspace packages export `./src/index.ts` not `./dist/index.js`

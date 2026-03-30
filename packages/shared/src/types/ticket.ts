@@ -2,6 +2,7 @@ export enum TicketSource {
   GITHUB = "github",
   LINEAR = "linear",
   JIRA = "jira",
+  NOTION = "notion",
 }
 
 export interface TicketComment {

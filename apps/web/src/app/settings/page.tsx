@@ -1097,6 +1097,11 @@ export default function SettingsPage() {
                     {p.source === "github" &&
                       p.config?.owner &&
                       `${p.config.owner}/${p.config.repo}`}
+                    {p.source === "notion" &&
+                      p.config?.databaseId &&
+                      `Database: ${p.config.databaseId}`}
+                    {p.source === "linear" && p.config?.teamId && `Team: ${p.config.teamId}`}
+                    {p.source === "jira" && p.config?.baseUrl && `${p.config.baseUrl}`}
                   </span>
                 </div>
               ))}

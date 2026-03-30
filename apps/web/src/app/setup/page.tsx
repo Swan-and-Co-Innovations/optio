@@ -103,8 +103,12 @@ export default function SetupPage() {
 
   // Step 6: Tickets
   const [enableTickets, setEnableTickets] = useState(false);
+  const [ticketProvider, setTicketProvider] = useState("github");
   const [ticketOwner, setTicketOwner] = useState("");
   const [ticketRepo, setTicketRepo] = useState("");
+  // Notion-specific
+  const [notionApiKey, setNotionApiKey] = useState("");
+  const [notionDatabaseId, setNotionDatabaseId] = useState("");
 
   // Check runtime on mount
   useEffect(() => {
@@ -370,16 +374,27 @@ export default function SetupPage() {
   const saveTicketsStep = async () => {
     setLoading(true);
     try {
-      if (enableTickets && ticketOwner && ticketRepo) {
-        await api.createTicketProvider({
-          source: "github",
-          config: {
-            token: githubToken,
-            owner: ticketOwner,
-            repo: ticketRepo,
-            label: "optio",
-          },
-        });
+      if (enableTickets) {
+        if (ticketProvider === "github" && ticketOwner && ticketRepo) {
+          await api.createTicketProvider({
+            source: "github",
+            config: {
+              token: githubToken,
+              owner: ticketOwner,
+              repo: ticketRepo,
+              label: "optio",
+            },
+          });
+        } else if (ticketProvider === "notion" && notionApiKey && notionDatabaseId) {
+          await api.createTicketProvider({
+            source: "notion",
+            config: {
+              apiKey: notionApiKey,
+              databaseId: notionDatabaseId,
+              label: "optio",
+            },
+          });
+        }
       }
       goNext();
     } catch (err) {
@@ -1238,7 +1253,7 @@ export default function SetupPage() {
                 <h2 className="text-lg font-bold">Ticket Integration</h2>
               </div>
               <p className="text-text-muted text-sm">
-                Optionally connect a GitHub repository to auto-create tasks from issues labeled{" "}
+                Optionally connect a ticket provider to auto-create tasks from items labeled{" "}
                 <code className="px-1 py-0.5 bg-bg rounded text-primary text-xs">optio</code>.
               </p>
 
@@ -1249,7 +1264,12 @@ export default function SetupPage() {
                   onChange={(e) => {
                     setEnableTickets(e.target.checked);
                     // Auto-populate from the first selected repo
-                    if (e.target.checked && !ticketOwner && repos.length > 0) {
+                    if (
+                      e.target.checked &&
+                      ticketProvider === "github" &&
+                      !ticketOwner &&
+                      repos.length > 0
+                    ) {
                       const firstRepo = repos[0];
                       const name = firstRepo.fullName ?? firstRepo.url;
                       const match = name.match(/([^/]+)\/([^/.]+?)(?:\.git)?$/);
@@ -1261,33 +1281,84 @@ export default function SetupPage() {
                   }}
                   className="w-4 h-4 rounded"
                 />
-                <span className="text-sm">Enable GitHub Issues integration</span>
+                <span className="text-sm">Enable ticket integration</span>
               </label>
 
               {enableTickets && (
                 <div className="p-4 rounded-md bg-bg border border-border space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs text-text-muted mb-1">Owner</label>
-                      <input
-                        value={ticketOwner}
-                        onChange={(e) => setTicketOwner(e.target.value)}
-                        placeholder="your-org"
-                        className="w-full px-3 py-2 rounded-md bg-bg-card border border-border text-sm focus:outline-none focus:border-primary"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-text-muted mb-1">Repository</label>
-                      <input
-                        value={ticketRepo}
-                        onChange={(e) => setTicketRepo(e.target.value)}
-                        placeholder="your-repo"
-                        className="w-full px-3 py-2 rounded-md bg-bg-card border border-border text-sm focus:outline-none focus:border-primary"
-                      />
-                    </div>
+                  <div>
+                    <label className="block text-xs text-text-muted mb-1">Provider</label>
+                    <select
+                      value={ticketProvider}
+                      onChange={(e) => setTicketProvider(e.target.value)}
+                      className="w-full px-3 py-2 rounded-md bg-bg-card border border-border text-sm focus:outline-none focus:border-primary"
+                    >
+                      <option value="github">GitHub Issues</option>
+                      <option value="notion">Notion</option>
+                      <option value="linear">Linear</option>
+                      <option value="jira">Jira</option>
+                    </select>
                   </div>
+
+                  {ticketProvider === "github" && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs text-text-muted mb-1">Owner</label>
+                        <input
+                          value={ticketOwner}
+                          onChange={(e) => setTicketOwner(e.target.value)}
+                          placeholder="your-org"
+                          className="w-full px-3 py-2 rounded-md bg-bg-card border border-border text-sm focus:outline-none focus:border-primary"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-text-muted mb-1">Repository</label>
+                        <input
+                          value={ticketRepo}
+                          onChange={(e) => setTicketRepo(e.target.value)}
+                          placeholder="your-repo"
+                          className="w-full px-3 py-2 rounded-md bg-bg-card border border-border text-sm focus:outline-none focus:border-primary"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {ticketProvider === "notion" && (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-xs text-text-muted mb-1">
+                          Integration Token
+                        </label>
+                        <input
+                          type="password"
+                          value={notionApiKey}
+                          onChange={(e) => setNotionApiKey(e.target.value)}
+                          placeholder="ntn_..."
+                          className="w-full px-3 py-2 rounded-md bg-bg-card border border-border text-sm focus:outline-none focus:border-primary"
+                        />
+                        <p className="text-xs text-text-muted mt-1">
+                          Create an integration at notion.so/my-integrations and share the database
+                          with it.
+                        </p>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-text-muted mb-1">Database ID</label>
+                        <input
+                          value={notionDatabaseId}
+                          onChange={(e) => setNotionDatabaseId(e.target.value)}
+                          placeholder="abc123..."
+                          className="w-full px-3 py-2 rounded-md bg-bg-card border border-border text-sm focus:outline-none focus:border-primary"
+                        />
+                        <p className="text-xs text-text-muted mt-1">
+                          Found in the database URL after the workspace name and before the query
+                          string.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
                   <p className="text-xs text-text-muted">
-                    Issues with the{" "}
+                    Items with the{" "}
                     <code className="px-1 py-0.5 bg-bg-card rounded text-primary">optio</code> label
                     will be synced automatically.
                   </p>
