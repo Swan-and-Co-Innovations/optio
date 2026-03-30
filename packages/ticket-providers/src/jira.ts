@@ -127,7 +127,7 @@ export class JiraTicketProvider implements TicketProvider {
           url: `${jiraConfig.baseUrl}/browse/${issue.key}`,
           labels: fields.labels ?? [],
           assignee: fields.assignee?.displayName,
-          repo: fields.project.key,
+          repo: undefined,
           attachments: attachments.length > 0 ? attachments : undefined,
           metadata: {
             key: issue.key,

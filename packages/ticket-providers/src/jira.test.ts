@@ -229,7 +229,7 @@ describe("JiraTicketProvider pagination", () => {
     expect(ticket.url).toBe("https://test.atlassian.net/browse/TEST-123");
     expect(ticket.labels).toEqual(["optio"]);
     expect(ticket.assignee).toBe("Test User");
-    expect(ticket.repo).toBe("TEST");
+    expect(ticket.repo).toBeUndefined();
     expect(ticket.metadata).toMatchObject({
       key: "TEST-123",
       status: "To Do",
