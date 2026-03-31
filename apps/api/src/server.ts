@@ -111,7 +111,17 @@ export async function buildServer() {
   // Global error handler for Zod validation
   app.setErrorHandler((error: FastifyError | Error, _req, reply) => {
     if (error.name === "ZodError") {
-      return reply.status(400).send({ error: "Validation error", details: error.message });
+      app.log.error(error, "Zod validation error");
+      const isDev = process.env.NODE_ENV !== "production";
+      if (isDev) {
+        return reply.status(400).send({ error: "Validation error", details: error.message });
+      }
+      const zodError = error as unknown as { issues: Array<{ path: (string | number)[] }> };
+      const fields = zodError.issues.map((i) => i.path.join(".")).filter(Boolean);
+      const details = fields.length
+        ? `Invalid fields: ${fields.join(", ")}`
+        : "Invalid request body";
+      return reply.status(400).send({ error: "Validation error", details });
     }
     if (error.name === "InvalidTransitionError") {
       return reply.status(409).send({ error: error.message });

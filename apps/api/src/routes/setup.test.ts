@@ -219,6 +219,69 @@ describe("POST /api/setup/validate/openai-key", () => {
   });
 });
 
+describe("error sanitization in setup routes", () => {
+  let app: FastifyInstance;
+  const originalNodeEnv = process.env.NODE_ENV;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    app = await buildTestApp();
+  });
+
+  afterEach(() => {
+    process.env.NODE_ENV = originalNodeEnv;
+    vi.unstubAllGlobals();
+  });
+
+  it("returns generic error in production when github-token validation throws", async () => {
+    process.env.NODE_ENV = "production";
+    // Re-import to pick up the env change
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("ECONNREFUSED 127.0.0.1:443")));
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/setup/validate/github-token",
+      payload: { token: "ghp_test" },
+    });
+
+    expect(res.json().valid).toBe(false);
+    // Should NOT contain the internal error details
+    expect(res.json().error).not.toContain("ECONNREFUSED");
+  });
+
+  it("returns detailed error in development when github-token validation throws", async () => {
+    process.env.NODE_ENV = "development";
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("ECONNREFUSED 127.0.0.1:443")));
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/setup/validate/github-token",
+      payload: { token: "ghp_test" },
+    });
+
+    expect(res.json().valid).toBe(false);
+    expect(res.json().error).toContain("ECONNREFUSED");
+  });
+
+  it("returns generic error in production when repos listing throws", async () => {
+    process.env.NODE_ENV = "production";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new Error("getaddrinfo ENOTFOUND api.github.com")),
+    );
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/setup/repos",
+      payload: { token: "ghp_test" },
+    });
+
+    expect(res.json().repos).toEqual([]);
+    expect(res.json().error).not.toContain("ENOTFOUND");
+    expect(res.json().error).toBe("An unexpected error occurred");
+  });
+});
+
 describe("POST /api/setup/repos", () => {
   let app: FastifyInstance;
 

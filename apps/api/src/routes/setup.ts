@@ -4,6 +4,11 @@ import { listSecrets, retrieveSecret } from "../services/secret-service.js";
 import { isSubscriptionAvailable } from "../services/auth-service.js";
 import { isGitHubAppConfigured } from "../services/github-app-service.js";
 
+function sanitizeError(err: unknown): string {
+  if (process.env.NODE_ENV !== "production") return String(err);
+  return "An unexpected error occurred";
+}
+
 export async function setupRoutes(app: FastifyInstance) {
   // Check if the system has been set up (secrets exist)
   app.get("/api/setup/status", async (_req, reply) => {
@@ -84,7 +89,8 @@ export async function setupRoutes(app: FastifyInstance) {
       const user = (await res.json()) as { login: string; name: string };
       reply.send({ valid: true, user: { login: user.login, name: user.name } });
     } catch (err) {
-      reply.send({ valid: false, error: String(err) });
+      app.log.error(err, "GitHub token validation failed");
+      reply.send({ valid: false, error: sanitizeError(err) });
     }
   });
 
@@ -107,7 +113,8 @@ export async function setupRoutes(app: FastifyInstance) {
         reply.send({ valid: false, error: body.error?.message ?? `API returned ${res.status}` });
       }
     } catch (err) {
-      reply.send({ valid: false, error: String(err) });
+      app.log.error(err, "Anthropic key validation failed");
+      reply.send({ valid: false, error: sanitizeError(err) });
     }
   });
 
@@ -135,7 +142,8 @@ export async function setupRoutes(app: FastifyInstance) {
       const user = (await res.json()) as { login: string; name: string };
       reply.send({ valid: true, user: { login: user.login, name: user.name } });
     } catch (err) {
-      reply.send({ valid: false, error: String(err) });
+      app.log.error(err, "Copilot token validation failed");
+      reply.send({ valid: false, error: sanitizeError(err) });
     }
   });
 
@@ -155,7 +163,8 @@ export async function setupRoutes(app: FastifyInstance) {
         reply.send({ valid: false, error: body.error?.message ?? `API returned ${res.status}` });
       }
     } catch (err) {
-      reply.send({ valid: false, error: String(err) });
+      app.log.error(err, "OpenAI key validation failed");
+      reply.send({ valid: false, error: sanitizeError(err) });
     }
   });
 
@@ -200,7 +209,8 @@ export async function setupRoutes(app: FastifyInstance) {
 
       reply.send({ repos });
     } catch (err) {
-      reply.send({ repos: [], error: String(err) });
+      app.log.error(err, "Repo listing failed");
+      reply.send({ repos: [], error: sanitizeError(err) });
     }
   });
 
@@ -239,7 +249,8 @@ export async function setupRoutes(app: FastifyInstance) {
         reply.send({ valid: false, error: `Repository not accessible (${res.status})` });
       }
     } catch (err) {
-      reply.send({ valid: false, error: String(err) });
+      app.log.error(err, "Repo validation failed");
+      reply.send({ valid: false, error: sanitizeError(err) });
     }
   });
 }
