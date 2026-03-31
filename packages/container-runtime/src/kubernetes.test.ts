@@ -45,7 +45,11 @@ vi.mock("@kubernetes/client-node", () => ({
   V1EmptyDirVolumeSource: vi.fn(() => ({})),
 }));
 
-import { KubernetesContainerRuntime } from "./kubernetes.js";
+import {
+  KubernetesContainerRuntime,
+  ALLOWED_CAPABILITIES,
+  ALLOWED_HOST_PATH_PREFIXES,
+} from "./kubernetes.js";
 import type { ContainerSpec } from "@optio/shared";
 
 // ---------------------------------------------------------------------------
@@ -133,22 +137,15 @@ describe("KubernetesContainerRuntime", () => {
       expect(container.resources.requests).toEqual({ cpu: "2", memory: "4Gi" });
     });
 
-    it("builds hostPath volumes with mounts", async () => {
+    it("rejects hostPath volumes when no host paths are allowed", async () => {
       const spec = baseSpec({
         volumes: [{ hostPath: "/host/data", mountPath: "/data" }],
       });
 
-      await runtime.create(spec);
-
-      const body = mockCoreApi.createNamespacedPod.mock.calls[0][0].body;
-      expect(body.spec.volumes).toHaveLength(1);
-      expect(body.spec.volumes[0].name).toBe("vol-0");
-      expect(body.spec.volumes[0].hostPath).toEqual({ path: "/host/data" });
-
-      const mount = body.spec.containers[0].volumeMounts[0];
-      expect(mount.name).toBe("vol-0");
-      expect(mount.mountPath).toBe("/data");
-      expect(mount.readOnly).toBe(false);
+      await expect(runtime.create(spec)).rejects.toThrow(
+        'Host path volume mount "/host/data" is not permitted',
+      );
+      expect(mockCoreApi.createNamespacedPod).not.toHaveBeenCalled();
     });
 
     it("builds PVC volumes with mounts", async () => {
@@ -202,13 +199,16 @@ describe("KubernetesContainerRuntime", () => {
       });
     });
 
-    it("sets security context capabilities", async () => {
-      const spec = baseSpec({ capabilities: ["SYS_ADMIN", "NET_ADMIN"] });
+    it("sets security context with allowed capabilities and drops ALL", async () => {
+      const spec = baseSpec({ capabilities: ["NET_ADMIN", "NET_RAW"] });
 
       await runtime.create(spec);
 
       const container = mockCoreApi.createNamespacedPod.mock.calls[0][0].body.spec.containers[0];
-      expect(container.securityContext.capabilities).toEqual({ add: ["SYS_ADMIN", "NET_ADMIN"] });
+      expect(container.securityContext.capabilities).toEqual({
+        drop: ["ALL"],
+        add: ["NET_ADMIN", "NET_RAW"],
+      });
     });
 
     it("adds sidecar containers", async () => {
@@ -299,6 +299,79 @@ describe("KubernetesContainerRuntime", () => {
       const handle = await runtime.create(baseSpec());
 
       expect(handle).toEqual({ id: "uid-xyz", name: "optio-task-task-123" });
+    });
+  });
+
+  // =========================================================================
+  // Security: capability and host-path allowlists
+  // =========================================================================
+  describe("security allowlists", () => {
+    it("drops ALL capabilities by default when none are requested", async () => {
+      const spec = baseSpec();
+
+      await runtime.create(spec);
+
+      const container = mockCoreApi.createNamespacedPod.mock.calls[0][0].body.spec.containers[0];
+      expect(container.securityContext.capabilities).toEqual({ drop: ["ALL"] });
+    });
+
+    it("rejects disallowed capabilities (SYS_ADMIN)", async () => {
+      const spec = baseSpec({ capabilities: ["SYS_ADMIN"] });
+
+      await expect(runtime.create(spec)).rejects.toThrow(
+        "Disallowed container capabilities requested: SYS_ADMIN",
+      );
+      expect(mockCoreApi.createNamespacedPod).not.toHaveBeenCalled();
+    });
+
+    it("rejects multiple disallowed capabilities", async () => {
+      const spec = baseSpec({ capabilities: ["SYS_ADMIN", "SYS_PTRACE", "NET_ADMIN"] });
+
+      await expect(runtime.create(spec)).rejects.toThrow(
+        "Disallowed container capabilities requested: SYS_ADMIN, SYS_PTRACE",
+      );
+    });
+
+    it("allows all capabilities in the ALLOWED_CAPABILITIES set", async () => {
+      const spec = baseSpec({ capabilities: [...ALLOWED_CAPABILITIES] });
+
+      await runtime.create(spec);
+
+      const container = mockCoreApi.createNamespacedPod.mock.calls[0][0].body.spec.containers[0];
+      expect(container.securityContext.capabilities.drop).toEqual(["ALL"]);
+      expect(container.securityContext.capabilities.add).toEqual([...ALLOWED_CAPABILITIES]);
+    });
+
+    it("rejects host path mounts by default (empty allowlist)", async () => {
+      const spec = baseSpec({
+        volumes: [{ hostPath: "/etc/shadow", mountPath: "/mnt/shadow" }],
+      });
+
+      await expect(runtime.create(spec)).rejects.toThrow(
+        "Host path mounts are disabled. Use persistentVolumeClaim volumes instead.",
+      );
+    });
+
+    it("still allows PVC volumes when host paths are rejected", async () => {
+      const spec = baseSpec({
+        volumes: [{ persistentVolumeClaim: "my-pvc", mountPath: "/storage" }],
+      });
+
+      await runtime.create(spec);
+
+      const body = mockCoreApi.createNamespacedPod.mock.calls[0][0].body;
+      expect(body.spec.volumes[0].persistentVolumeClaim).toEqual({ claimName: "my-pvc" });
+    });
+
+    it("exports ALLOWED_CAPABILITIES as a Set", () => {
+      expect(ALLOWED_CAPABILITIES).toBeInstanceOf(Set);
+      expect(ALLOWED_CAPABILITIES.has("NET_ADMIN")).toBe(true);
+      expect(ALLOWED_CAPABILITIES.has("SYS_ADMIN")).toBe(false);
+    });
+
+    it("exports ALLOWED_HOST_PATH_PREFIXES as an empty array by default", () => {
+      expect(Array.isArray(ALLOWED_HOST_PATH_PREFIXES)).toBe(true);
+      expect(ALLOWED_HOST_PATH_PREFIXES).toHaveLength(0);
     });
   });
 

@@ -26,6 +26,37 @@ const CONTAINER_NAME = "main";
 const POD_READY_TIMEOUT_MS = 120_000;
 const POD_READY_POLL_MS = 1_000;
 
+/**
+ * Capabilities that are permitted to be added to container security contexts.
+ * Any capability not in this set will be rejected during pod creation.
+ * Dangerous capabilities like SYS_ADMIN are intentionally excluded to prevent
+ * privilege escalation.
+ */
+export const ALLOWED_CAPABILITIES = new Set([
+  "AUDIT_WRITE",
+  "CHOWN",
+  "DAC_OVERRIDE",
+  "FOWNER",
+  "FSETID",
+  "KILL",
+  "MKNOD",
+  "NET_ADMIN",
+  "NET_BIND_SERVICE",
+  "NET_RAW",
+  "SETFCAP",
+  "SETGID",
+  "SETPCAP",
+  "SETUID",
+  "SYS_CHROOT",
+]);
+
+/**
+ * Host path prefixes that are permitted for volume mounts.
+ * Paths must start with one of these prefixes to be allowed.
+ * An empty set means all host path mounts are rejected.
+ */
+export const ALLOWED_HOST_PATH_PREFIXES: readonly string[] = [];
+
 export class KubernetesContainerRuntime implements ContainerRuntime {
   private kubeConfig: KubeConfig;
   private coreApi: CoreV1Api;
@@ -101,6 +132,7 @@ export class KubernetesContainerRuntime implements ContainerRuntime {
         volume.name = volumeName;
 
         if (v.hostPath) {
+          this.validateHostPath(v.hostPath);
           const hostPath = new V1HostPathVolumeSource();
           hostPath.path = v.hostPath;
           volume.hostPath = hostPath;
@@ -155,11 +187,18 @@ export class KubernetesContainerRuntime implements ContainerRuntime {
       }
     }
 
-    // Set security context (capabilities for DinD, etc.)
-    if (spec.capabilities && spec.capabilities.length > 0) {
+    // Set security context — always drop ALL capabilities, then selectively add
+    // only those that pass the allowlist check.
+    {
       const secCtx = new V1SecurityContext();
       const caps = new V1Capabilities();
-      caps.add = spec.capabilities;
+      caps.drop = ["ALL"];
+
+      if (spec.capabilities && spec.capabilities.length > 0) {
+        this.validateCapabilities(spec.capabilities);
+        caps.add = spec.capabilities;
+      }
+
       secCtx.capabilities = caps;
       container.securityContext = secCtx;
     }
@@ -394,6 +433,39 @@ export class KubernetesContainerRuntime implements ContainerRuntime {
   }
 
   // ---- Private helpers ----
+
+  /**
+   * Validate that all requested capabilities are in the allowlist.
+   * Throws if any capability is not permitted.
+   */
+  private validateCapabilities(capabilities: string[]): void {
+    const disallowed = capabilities.filter((cap) => !ALLOWED_CAPABILITIES.has(cap));
+    if (disallowed.length > 0) {
+      throw new Error(
+        `Disallowed container capabilities requested: ${disallowed.join(", ")}. ` +
+          `Allowed capabilities: ${[...ALLOWED_CAPABILITIES].join(", ")}`,
+      );
+    }
+  }
+
+  /**
+   * Validate that a host path is permitted by the allowlist.
+   * Throws if the path is not under any allowed prefix.
+   */
+  private validateHostPath(path: string): void {
+    const normalizedPath = path.replace(/\/+$/, "");
+    const allowed = ALLOWED_HOST_PATH_PREFIXES.some(
+      (prefix) => normalizedPath === prefix || normalizedPath.startsWith(prefix + "/"),
+    );
+    if (!allowed) {
+      throw new Error(
+        `Host path volume mount "${path}" is not permitted. ` +
+          (ALLOWED_HOST_PATH_PREFIXES.length > 0
+            ? `Allowed host path prefixes: ${ALLOWED_HOST_PATH_PREFIXES.join(", ")}`
+            : `Host path mounts are disabled. Use persistentVolumeClaim volumes instead.`),
+      );
+    }
+  }
 
   private async ensureNamespace(): Promise<void> {
     if (this.namespaceEnsured) return;

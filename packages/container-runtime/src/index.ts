@@ -1,7 +1,11 @@
 export type { ContainerRuntime, LogOptions, ExecOptions } from "./types.js";
 export { DockerContainerRuntime } from "./docker.js";
 export type { DockerRuntimeOptions } from "./docker.js";
-export { KubernetesContainerRuntime } from "./kubernetes.js";
+export {
+  KubernetesContainerRuntime,
+  ALLOWED_CAPABILITIES,
+  ALLOWED_HOST_PATH_PREFIXES,
+} from "./kubernetes.js";
 
 import type { ContainerRuntime } from "./types.js";
 import { DockerContainerRuntime, type DockerRuntimeOptions } from "./docker.js";
