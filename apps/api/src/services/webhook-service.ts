@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { eq, desc } from "drizzle-orm";
-import { assertSsrfSafe, SsrfError } from "@optio/shared";
+import { assertSsrfSafe } from "../utils/ssrf.js";
 import { db } from "../db/client.js";
 import { webhooks, webhookDeliveries } from "../db/schema.js";
 import { logger } from "../logger.js";

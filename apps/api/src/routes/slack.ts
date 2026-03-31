@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { isSsrfSafeUrl } from "@optio/shared";
+import { isSsrfSafeUrl } from "../utils/ssrf.js";
 import { handleSlackAction, sendSlackNotification } from "../services/slack-service.js";
 import { logger } from "../logger.js";
 

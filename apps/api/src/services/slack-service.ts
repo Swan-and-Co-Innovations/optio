@@ -1,5 +1,5 @@
 import { logger } from "../logger.js";
-import { assertSsrfSafe, SsrfError } from "@optio/shared";
+import { assertSsrfSafe } from "../utils/ssrf.js";
 import type { TaskState } from "@optio/shared";
 import type { RepoRecord } from "./repo-service.js";
 
