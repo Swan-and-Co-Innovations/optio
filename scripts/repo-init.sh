@@ -48,6 +48,13 @@ fi
 # Install extra packages if requested (comma or space separated)
 if [ -n "${OPTIO_EXTRA_PACKAGES:-}" ]; then
   PACKAGES=$(echo "${OPTIO_EXTRA_PACKAGES}" | tr ',' ' ')
+  # Validate package names to prevent command injection
+  for pkg in ${PACKAGES}; do
+    if [[ ! "$pkg" =~ ^[a-zA-Z0-9][a-zA-Z0-9.+\-]+$ ]]; then
+      echo "[optio] Error: invalid package name: $pkg" >&2
+      exit 1
+    fi
+  done
   echo "[optio] Installing packages: ${PACKAGES}"
   sudo apt-get update -qq 2>/dev/null && sudo apt-get install -y -qq ${PACKAGES} 2>&1 | tail -3 || echo "[optio] Warning: package install failed"
 fi
