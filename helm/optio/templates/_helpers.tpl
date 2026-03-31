@@ -48,6 +48,18 @@ Called from secrets.yaml to fail early on misconfiguration.
 {{- end }}
 
 {{/*
+Validate that encryption.key is not a known-weak placeholder value.
+Called from secrets.yaml to prevent deploying with insecure defaults.
+*/}}
+{{- define "optio.validateEncryptionKey" -}}
+{{- $lower := .Values.encryption.key | lower -}}
+{{- $weak := list "change-me-in-production" "changeme" "test" "secret" "password" "default" -}}
+{{- if has $lower $weak -}}
+  {{- fail (printf "encryption.key is set to a known-weak value (%q). Generate a strong key with: openssl rand -hex 32" .Values.encryption.key) -}}
+{{- end -}}
+{{- end }}
+
+{{/*
 Validate that ingress and gatewayAPI are not both enabled.
 Called from gateway.yaml / ingress.yaml guards.
 */}}

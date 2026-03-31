@@ -81,6 +81,10 @@ async function checkMetricsServer() {
 }
 
 async function main() {
+  // Validate encryption key before anything else — fail fast on weak/missing keys
+  const { validateEncryptionKey } = await import("./services/secret-service.js");
+  validateEncryptionKey();
+
   // Run database migrations before anything else
   const { migrate } = await import("drizzle-orm/postgres-js/migrator");
   const { db } = await import("./db/client.js");

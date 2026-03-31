@@ -6,9 +6,25 @@ import type { SecretRef } from "@optio/shared";
 
 const ALGORITHM = "aes-256-gcm";
 
+/** Values that must never be accepted as encryption keys. */
+const WEAK_KEY_VALUES = new Set([
+  "change-me-in-production",
+  "changeme",
+  "test",
+  "secret",
+  "password",
+  "default",
+]);
+
 function getEncryptionKey(): Buffer {
   const key = process.env.OPTIO_ENCRYPTION_KEY;
   if (!key) throw new Error("OPTIO_ENCRYPTION_KEY is not set");
+  if (WEAK_KEY_VALUES.has(key.toLowerCase())) {
+    throw new Error(
+      `OPTIO_ENCRYPTION_KEY is set to a known-weak value ("${key}"). ` +
+        "Generate a strong key with: openssl rand -hex 32",
+    );
+  }
   if (key.length === 64 && /^[0-9a-f]+$/i.test(key)) {
     return Buffer.from(key, "hex");
   }
@@ -21,6 +37,14 @@ function encryptionKey(): Buffer {
     _encryptionKey = getEncryptionKey();
   }
   return _encryptionKey;
+}
+
+/**
+ * Eagerly validate the encryption key on startup.
+ * Call this during server boot to fail fast rather than on first secret access.
+ */
+export function validateEncryptionKey(): void {
+  encryptionKey();
 }
 
 export function encrypt(plaintext: string): { encrypted: Buffer; iv: Buffer; authTag: Buffer } {
