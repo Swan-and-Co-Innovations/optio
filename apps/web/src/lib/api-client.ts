@@ -271,6 +271,27 @@ export const api = {
       body: JSON.stringify({ targetVersion }),
     }),
 
+  // GitHub Token Management
+  getGithubTokenStatus: () =>
+    request<{
+      status: "valid" | "expired" | "missing" | "error";
+      source?: "pat" | "github_app";
+      user?: { login: string; name: string };
+      message?: string;
+      error?: string;
+    }>("/api/github-token/status"),
+
+  rotateGithubToken: (token: string) =>
+    request<{
+      success: boolean;
+      user?: { login: string; name: string };
+      message?: string;
+      error?: string;
+    }>("/api/github-token/rotate", {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    }),
+
   // Setup
   getSetupStatus: () =>
     request<{

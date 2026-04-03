@@ -20,6 +20,8 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronRight,
+  Github,
+  KeyRound,
 } from "lucide-react";
 import { OPTIO_TOOL_CATEGORIES, ALL_OPTIO_TOOL_NAMES } from "@optio/shared";
 
@@ -987,6 +989,194 @@ function OptioAgentSettings() {
   );
 }
 
+function GitHubTokenManager() {
+  const [status, setStatus] = useState<"valid" | "expired" | "missing" | "error" | null>(null);
+  const [source, setSource] = useState<"pat" | "github_app" | undefined>();
+  const [user, setUser] = useState<{ login: string; name: string } | undefined>();
+  const [message, setMessage] = useState<string | undefined>();
+  const [loading, setLoading] = useState(true);
+  const [newToken, setNewToken] = useState("");
+  const [rotating, setRotating] = useState(false);
+  const [showRotateForm, setShowRotateForm] = useState(false);
+
+  const checkStatus = async () => {
+    setLoading(true);
+    try {
+      const res = await api.getGithubTokenStatus();
+      setStatus(res.status);
+      setSource(res.source);
+      setUser(res.user);
+      setMessage(res.message ?? res.error);
+    } catch {
+      setStatus("error");
+      setMessage("Failed to check token status");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    checkStatus();
+  }, []);
+
+  const handleRotate = async () => {
+    if (!newToken.trim()) return;
+    setRotating(true);
+    try {
+      const res = await api.rotateGithubToken(newToken.trim());
+      if (res.success) {
+        toast.success(res.message ?? "GitHub token replaced successfully");
+        setNewToken("");
+        setShowRotateForm(false);
+        checkStatus();
+      } else {
+        toast.error(res.error ?? "Token validation failed");
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to replace token");
+    } finally {
+      setRotating(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="p-5 rounded-xl border border-border/50 bg-bg-card text-center text-text-muted text-sm">
+        <Loader2 className="w-4 h-4 animate-spin inline mr-2" /> Checking token status...
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-5 rounded-xl border border-border/50 bg-bg-card space-y-4">
+      {/* Current status */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          {status === "valid" ? (
+            <CheckCircle2 className="w-5 h-5 text-success shrink-0" />
+          ) : status === "expired" ? (
+            <AlertTriangle className="w-5 h-5 text-warning shrink-0" />
+          ) : status === "missing" ? (
+            <XCircle className="w-5 h-5 text-error shrink-0" />
+          ) : (
+            <AlertTriangle className="w-5 h-5 text-text-muted shrink-0" />
+          )}
+          <div>
+            <p className="text-sm font-medium">
+              {status === "valid"
+                ? "Token is valid"
+                : status === "expired"
+                  ? "Token is expired or revoked"
+                  : status === "missing"
+                    ? "No token configured"
+                    : "Unable to verify token"}
+            </p>
+            {user && (
+              <p className="text-xs text-text-muted">
+                Authenticated as <span className="font-medium text-text">{user.login}</span>
+                {user.name && ` (${user.name})`}
+              </p>
+            )}
+            {source === "github_app" && (
+              <p className="text-xs text-text-muted">Using GitHub App integration</p>
+            )}
+            {message && !user && <p className="text-xs text-text-muted">{message}</p>}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={checkStatus}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs text-text-muted hover:bg-bg-hover transition-colors"
+          >
+            <RefreshCw className="w-3 h-3" />
+            Refresh
+          </button>
+          {source !== "github_app" && (
+            <button
+              onClick={() => setShowRotateForm(!showRotateForm)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary/10 text-primary text-xs hover:bg-primary/20 transition-colors"
+            >
+              <KeyRound className="w-3 h-3" />
+              {status === "missing" ? "Add Token" : "Replace Token"}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Expired/missing warning */}
+      {(status === "expired" || status === "missing") && (
+        <div
+          className={`flex items-start gap-2 p-3 rounded-lg text-xs ${
+            status === "expired"
+              ? "bg-warning/10 border border-warning/20 text-warning"
+              : "bg-error/10 border border-error/20 text-error"
+          }`}
+        >
+          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+          <div>
+            <p className="font-medium">
+              {status === "expired"
+                ? "Your GitHub token has expired or been revoked"
+                : "No GitHub token is configured"}
+            </p>
+            <p className="mt-0.5 opacity-70">
+              PR watching, issue sync, and repo detection require a valid GitHub token. Replace it
+              below to restore these features.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Rotation form */}
+      {showRotateForm && (
+        <div className="space-y-3 p-3 rounded-lg border border-primary/30 bg-primary/5">
+          <p className="text-xs text-text-muted">
+            Enter a new GitHub Personal Access Token. The token will be validated before replacing
+            the existing one.
+          </p>
+          <div className="flex gap-2">
+            <input
+              type="password"
+              value={newToken}
+              onChange={(e) => setNewToken(e.target.value)}
+              onPaste={(e) => {
+                e.preventDefault();
+                const pasted = e.clipboardData.getData("text").trim();
+                if (pasted) setNewToken(pasted);
+              }}
+              placeholder="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+              className="flex-1 px-3 py-2 rounded-lg bg-bg border border-border text-sm font-mono focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+            />
+            <button
+              onClick={handleRotate}
+              disabled={!newToken.trim() || rotating}
+              className="px-4 py-2 rounded-md bg-primary text-white text-xs font-medium hover:bg-primary-hover disabled:opacity-50 whitespace-nowrap"
+            >
+              {rotating ? (
+                <span className="flex items-center gap-1.5">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  Validating...
+                </span>
+              ) : (
+                "Validate & Save"
+              )}
+            </button>
+          </div>
+          <button
+            onClick={() => {
+              setShowRotateForm(false);
+              setNewToken("");
+            }}
+            className="text-xs text-text-muted hover:text-text"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   usePageTitle("Settings");
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
@@ -1043,6 +1233,15 @@ export default function SettingsPage() {
       <section>
         <h2 className="text-sm font-medium text-text-muted mb-3">Authentication</h2>
         <AuthenticationSettings />
+      </section>
+
+      {/* GitHub Token */}
+      <section>
+        <h2 className="text-sm font-medium text-text-muted mb-3 flex items-center gap-2">
+          <Github className="w-4 h-4" />
+          GitHub Token
+        </h2>
+        <GitHubTokenManager />
       </section>
 
       {/* Notifications */}
