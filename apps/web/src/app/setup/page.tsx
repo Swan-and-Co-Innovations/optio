@@ -507,17 +507,17 @@ export default function SetupPage() {
                     GitHub App is configured — no personal access token needed.
                   </div>
                   <p className="text-text-muted text-sm">
-                    Optio will use the installed GitHub App to clone repos, create branches, and open
-                    pull requests.
+                    Optio will use the installed GitHub App to clone repos, create branches, and
+                    open pull requests.
                   </p>
                 </>
               ) : (
                 <>
                   <p className="text-text-muted text-sm">
-                    Agents need a GitHub token to clone repos, create branches, and open pull requests.
-                    Create a token with{" "}
-                    <code className="px-1 py-0.5 bg-bg rounded text-xs">repo</code> scope, then paste
-                    it below.
+                    Agents need a GitHub token to clone repos, create branches, and open pull
+                    requests. Create a token with{" "}
+                    <code className="px-1 py-0.5 bg-bg rounded text-xs">repo</code> scope, then
+                    paste it below.
                   </p>
                   <a
                     href="https://github.com/settings/tokens/new?scopes=repo,read:org&description=Optio+Agent"
@@ -1438,7 +1438,8 @@ export default function SetupPage() {
                 <div className="flex items-center gap-2 text-sm">
                   <CheckCircle className="w-4 h-4 text-success" />
                   <span>
-                    GitHub: {githubAppConfigured ? "App configured" : (githubUser?.login ?? "configured")}
+                    GitHub:{" "}
+                    {githubAppConfigured ? "App configured" : (githubUser?.login ?? "configured")}
                   </span>
                 </div>
                 {claudeReady && (
