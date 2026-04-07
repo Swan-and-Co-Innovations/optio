@@ -139,6 +139,16 @@ agent:
       - ReadWriteOnce
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Network Policy
+# Default-deny policy for agent (repo) pods. Restricts cluster-internal
+# traffic so compromised pods cannot reach PostgreSQL, Redis, or other
+# services directly. Requires a CNI plugin that supports NetworkPolicy
+# (e.g. Calico, Cilium, Weave Net). Not supported on Docker Desktop.
+# ──────────────────────────────────────────────────────────────────────────────
+networkPolicy:
+  enabled: false  # Set to true when your cluster supports NetworkPolicy
+
+# ──────────────────────────────────────────────────────────────────────────────
 # PostgreSQL (built-in)
 # Set enabled=false and configure externalDatabase.url for managed Postgres.
 # ──────────────────────────────────────────────────────────────────────────────
