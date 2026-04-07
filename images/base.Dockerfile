@@ -38,8 +38,8 @@ RUN corepack enable && corepack prepare pnpm@10 --activate
 # Claude Code
 RUN npm install -g @anthropic-ai/claude-code
 
-# GitHub Copilot CLI (pinned — unpinned installs hit transient npm 404s in CI)
-RUN npm install -g @github/copilot@1.0.20
+# GitHub Copilot CLI (pinned + best-effort — package may be temporarily unavailable)
+RUN npm install -g @github/copilot@1.0.20 || echo "WARN: @github/copilot install failed; copilot agent will not be available in this image"
 
 # OpenCode CLI (experimental — pinned version for stable JSON output)
 ARG OPENCODE_VERSION=latest
