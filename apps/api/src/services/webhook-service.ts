@@ -2,7 +2,7 @@ import { eq, desc } from "drizzle-orm";
 import { assertSsrfSafe } from "../utils/ssrf.js";
 import { db } from "../db/client.js";
 import { webhooks, webhookDeliveries } from "../db/schema.js";
-import { encrypt, decrypt } from "./secret-service.js";
+import { encrypt, decrypt, ALG_AES_256_GCM_V1 } from "./secret-service.js";
 import { HmacSha256Signer } from "./crypto/signer.js";
 import { logger } from "../logger.js";
 
@@ -41,7 +41,15 @@ function decryptWebhookRow(row: typeof webhooks.$inferSelect): WebhookRecord {
   let secret: string | null = null;
   if (row.encryptedSecret && row.secretIv && row.secretAuthTag) {
     const aad = Buffer.from(`webhook:${row.url}:secret`);
-    secret = decrypt(row.encryptedSecret, row.secretIv, row.secretAuthTag, aad);
+    secret = decrypt(
+      {
+        alg: row.secretAlg ?? ALG_AES_256_GCM_V1,
+        iv: row.secretIv,
+        ciphertext: row.encryptedSecret,
+        authTag: row.secretAuthTag,
+      },
+      aad,
+    );
   }
   return {
     id: row.id,
@@ -73,12 +81,15 @@ export async function createWebhook(
   let secretIv: Buffer | null = null;
   let secretAuthTag: Buffer | null = null;
 
+  let secretAlg: number = ALG_AES_256_GCM_V1;
+
   if (input.secret) {
     const aad = Buffer.from(`webhook:${input.url}:secret`);
-    const { encrypted, iv, authTag } = encrypt(input.secret, aad);
-    encryptedSecret = encrypted;
-    secretIv = iv;
-    secretAuthTag = authTag;
+    const blob = encrypt(input.secret, aad);
+    encryptedSecret = blob.ciphertext;
+    secretIv = blob.iv;
+    secretAuthTag = blob.authTag;
+    secretAlg = blob.alg;
   }
 
   const [webhook] = await db
@@ -89,6 +100,7 @@ export async function createWebhook(
       encryptedSecret,
       secretIv,
       secretAuthTag,
+      secretAlg,
       description: input.description ?? null,
       createdBy: createdBy ?? null,
       workspaceId: workspaceId ?? null,

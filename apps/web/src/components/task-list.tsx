@@ -89,6 +89,7 @@ const AGENT_TYPE_OPTIONS = [
   { value: "claude-code", label: "Claude Code" },
   { value: "codex", label: "Codex" },
   { value: "copilot", label: "Copilot" },
+  { value: "opencode", label: "OpenCode" },
 ];
 
 function getDateFromTimeFilter(timeFilter: string): string | undefined {

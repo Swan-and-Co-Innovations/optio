@@ -105,6 +105,25 @@ describe("buildAgentCommand", () => {
       const cmds = buildAgentCommand("claude-code", env);
       expect(cmds.some((c) => c.includes("--model"))).toBe(false);
     });
+
+    it("includes --input-format stream-json for mid-task messaging support", () => {
+      const env = { OPTIO_PROMPT: "Fix the bug" };
+      const cmds = buildAgentCommand("claude-code", env);
+      expect(cmds.some((c) => c.includes("--input-format stream-json"))).toBe(true);
+    });
+
+    it("includes --replay-user-messages for message acknowledgment", () => {
+      const env = { OPTIO_PROMPT: "Fix the bug" };
+      const cmds = buildAgentCommand("claude-code", env);
+      expect(cmds.some((c) => c.includes("--replay-user-messages"))).toBe(true);
+    });
+
+    it("does not include stream-json flags for codex agent", () => {
+      const env = { OPTIO_PROMPT: "Build feature" };
+      const cmds = buildAgentCommand("codex", env);
+      expect(cmds.some((c) => c.includes("--input-format stream-json"))).toBe(false);
+      expect(cmds.some((c) => c.includes("--replay-user-messages"))).toBe(false);
+    });
   });
 
   describe("codex agent", () => {
@@ -147,6 +166,54 @@ describe("buildAgentCommand", () => {
       const env = { OPTIO_PROMPT: "Build feature", OPTIO_CODEX_AUTH_MODE: "app-server" };
       const cmds = buildAgentCommand("codex", env);
       expect(cmds.some((c) => c.includes("--app-server"))).toBe(false);
+    });
+  });
+
+  describe("opencode agent", () => {
+    it("produces an opencode run command with --format json", () => {
+      const env = { OPTIO_PROMPT: "Fix the bug" };
+      const cmds = buildAgentCommand("opencode", env);
+      expect(cmds.some((c) => c.includes("opencode run"))).toBe(true);
+      expect(cmds.some((c) => c.includes("--format json"))).toBe(true);
+    });
+
+    it("includes experimental label in echo", () => {
+      const env = { OPTIO_PROMPT: "Fix the bug" };
+      const cmds = buildAgentCommand("opencode", env);
+      expect(cmds.some((c) => c.includes("(experimental)"))).toBe(true);
+    });
+
+    it("adds --model flag when OPTIO_OPENCODE_MODEL is set", () => {
+      const env = {
+        OPTIO_PROMPT: "Fix the bug",
+        OPTIO_OPENCODE_MODEL: "anthropic/claude-sonnet-4",
+      };
+      const cmds = buildAgentCommand("opencode", env);
+      expect(cmds.some((c) => c.includes("--model"))).toBe(true);
+      expect(cmds.some((c) => c.includes("anthropic/claude-sonnet-4"))).toBe(true);
+    });
+
+    it("adds --agent flag when OPTIO_OPENCODE_AGENT is set", () => {
+      const env = { OPTIO_PROMPT: "Fix the bug", OPTIO_OPENCODE_AGENT: "build" };
+      const cmds = buildAgentCommand("opencode", env);
+      expect(cmds.some((c) => c.includes("--agent"))).toBe(true);
+      expect(cmds.some((c) => c.includes("build"))).toBe(true);
+    });
+
+    it("does not add --model or --agent flags when not set", () => {
+      const env = { OPTIO_PROMPT: "Fix the bug" };
+      const cmds = buildAgentCommand("opencode", env);
+      expect(cmds.some((c) => c.includes("--model"))).toBe(false);
+      expect(cmds.some((c) => c.includes("--agent"))).toBe(false);
+    });
+
+    it("adds --session flag for resume", () => {
+      const env = { OPTIO_PROMPT: "Continue work" };
+      const cmds = buildAgentCommand("opencode", env, {
+        resumeSessionId: "oc-sess-abc",
+      });
+      expect(cmds.some((c) => c.includes("--session"))).toBe(true);
+      expect(cmds.some((c) => c.includes("oc-sess-abc"))).toBe(true);
     });
   });
 
@@ -227,6 +294,38 @@ describe("inferExitCode", () => {
     it("returns 1 on billing error", () => {
       const logs = "billing limit exceeded\n";
       expect(inferExitCode("codex", logs)).toBe(1);
+    });
+  });
+
+  describe("opencode", () => {
+    it("returns 0 for clean opencode logs", () => {
+      const logs = '{"type":"message","role":"assistant","content":"Done"}\n';
+      expect(inferExitCode("opencode", logs)).toBe(0);
+    });
+
+    it("returns 1 when error event is present", () => {
+      const logs = '{"type":"error","message":"something broke"}\n';
+      expect(inferExitCode("opencode", logs)).toBe(1);
+    });
+
+    it("returns 1 on ANTHROPIC_API_KEY auth error", () => {
+      const logs = "Error: ANTHROPIC_API_KEY is not set\n";
+      expect(inferExitCode("opencode", logs)).toBe(1);
+    });
+
+    it("returns 1 on OPENAI_API_KEY auth error", () => {
+      const logs = "Error: OPENAI_API_KEY is invalid\n";
+      expect(inferExitCode("opencode", logs)).toBe(1);
+    });
+
+    it("returns 1 on model not found", () => {
+      const logs = "model_not_found: the specified model does not exist\n";
+      expect(inferExitCode("opencode", logs)).toBe(1);
+    });
+
+    it("returns 1 on fatal error", () => {
+      const logs = "fatal: repository not found\n";
+      expect(inferExitCode("opencode", logs)).toBe(1);
     });
   });
 

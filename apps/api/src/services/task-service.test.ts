@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { TaskState } from "@optio/shared";
 
 vi.mock("../db/client.js", () => ({
@@ -20,10 +20,19 @@ vi.mock("../db/client.js", () => ({
 }));
 
 vi.mock("../db/schema.js", () => ({
-  tasks: { id: "id", state: "state", createdAt: "createdAt", taskId: "taskId" },
+  tasks: {
+    id: "id",
+    state: "state",
+    createdAt: "createdAt",
+    taskId: "taskId",
+    activitySubstate: "activitySubstate",
+    repoUrl: "repoUrl",
+  },
   taskEvents: { taskId: "taskId", createdAt: "createdAt", userId: "userId" },
-  taskLogs: { taskId: "taskId", timestamp: "timestamp" },
+  taskLogs: { taskId: "taskId", timestamp: "timestamp", logType: "logType", content: "content" },
   users: { id: "id", displayName: "display_name", avatarUrl: "avatar_url" },
+  repos: { repoUrl: "repoUrl" },
+  reviewDrafts: { taskId: "taskId" },
 }));
 
 vi.mock("./event-bus.js", () => ({ publishEvent: vi.fn() }));
@@ -40,6 +49,8 @@ import {
   tryTransitionTask,
   updateTaskPr,
   searchTasks,
+  updateTaskActivity,
+  getStallThresholdForRepo,
 } from "./task-service.js";
 
 describe("StateRaceError", () => {
@@ -240,5 +251,78 @@ describe("searchTasks", () => {
     await searchTasks({});
     // limit(51) = default 50 + 1
     expect(mockDb.limit).toHaveBeenCalledWith(51);
+  });
+});
+
+describe("getStallThresholdForRepo", () => {
+  const originalEnv = process.env.OPTIO_STALL_THRESHOLD_MS;
+
+  afterEach(() => {
+    if (originalEnv !== undefined) {
+      process.env.OPTIO_STALL_THRESHOLD_MS = originalEnv;
+    } else {
+      delete process.env.OPTIO_STALL_THRESHOLD_MS;
+    }
+  });
+
+  it("returns per-repo override when set", () => {
+    expect(getStallThresholdForRepo({ stallThresholdMs: 900000 })).toBe(900000);
+  });
+
+  it("returns env var when repo has no override", () => {
+    process.env.OPTIO_STALL_THRESHOLD_MS = "60000";
+    expect(getStallThresholdForRepo({ stallThresholdMs: null })).toBe(60000);
+    expect(getStallThresholdForRepo(null)).toBe(60000);
+  });
+
+  it("returns default when no env var or repo override", () => {
+    delete process.env.OPTIO_STALL_THRESHOLD_MS;
+    expect(getStallThresholdForRepo(null)).toBe(300000);
+    expect(getStallThresholdForRepo({ stallThresholdMs: null })).toBe(300000);
+  });
+});
+
+describe("updateTaskActivity", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("updates lastActivityAt and checks for recovery", async () => {
+    const mockDb = db as any;
+    // Chain: update().set().where().returning()
+    mockDb.returning.mockResolvedValueOnce([
+      { activitySubstate: "active", lastActivityAt: new Date() },
+    ]);
+    // No recovery event expected for "active" substate
+    await updateTaskActivity("t1", new Date());
+    expect(db.update).toHaveBeenCalled();
+    expect(publishEvent).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "task:recovered" }),
+    );
+  });
+
+  it("publishes task:recovered event when transitioning from stalled", async () => {
+    const at = new Date("2026-04-07T12:00:00Z");
+    const mockDb = db as any;
+    // update().set().where().returning() → recovered
+    mockDb.returning.mockResolvedValueOnce([{ activitySubstate: "recovered", lastActivityAt: at }]);
+    // getTask() → select().from().where() — use returning mock for second where chain
+    // We need where() to return db for the update chain, then resolve for getTask.
+    // Use returning mock for the first chain, and a fresh where mock for the second.
+    const origWhere = mockDb.where;
+    let whereCallCount = 0;
+    mockDb.where = vi.fn().mockImplementation((...args: unknown[]) => {
+      whereCallCount++;
+      if (whereCallCount <= 1) {
+        // First where() — part of update chain, return db so .returning() works
+        return mockDb;
+      }
+      // Second where() — getTask select, return task data
+      return Promise.resolve([{ id: "t1", lastActivityAt: new Date("2026-04-07T11:50:00Z") }]);
+    });
+    await updateTaskActivity("t1", at);
+    expect(publishEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "task:recovered", taskId: "t1" }),
+    );
+    // Restore original where mock
+    mockDb.where = origWhere;
   });
 });

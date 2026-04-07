@@ -8,6 +8,13 @@ export const DEFAULT_MAX_TURNS_REVIEW = 30;
 export const DEFAULT_MAX_TICKET_PAGES = 20;
 
 /**
+ * Default threshold (in ms) before a running task is flagged as "stalled".
+ * Override per-repo via `repos.stallThresholdMs` or globally via
+ * `OPTIO_STALL_THRESHOLD_MS` env var.
+ */
+export const DEFAULT_STALL_THRESHOLD_MS = 300_000; // 5 minutes
+
+/**
  * Max length for K8s resource names.
  */
 const K8S_NAME_MAX = 63;

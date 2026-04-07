@@ -32,16 +32,18 @@ vi.mock("../logger.js", () => ({
 
 // Mock encrypt/decrypt from secret-service
 const mockEncrypt = vi.fn().mockImplementation((plaintext: string) => ({
-  encrypted: Buffer.from(`enc:${plaintext}`),
+  alg: 1,
+  ciphertext: Buffer.from(`enc:${plaintext}`),
   iv: Buffer.from("mock-iv-1234567"),
   authTag: Buffer.from("mock-auth-tag12"),
 }));
-const mockDecrypt = vi.fn().mockImplementation((encrypted: Buffer) => {
-  const str = encrypted.toString();
+const mockDecrypt = vi.fn().mockImplementation((blob: { ciphertext: Buffer }) => {
+  const str = blob.ciphertext.toString();
   return str.startsWith("enc:") ? str.slice(4) : str;
 });
 
 vi.mock("./secret-service.js", () => ({
+  ALG_AES_256_GCM_V1: 1,
   encrypt: (...args: unknown[]) => mockEncrypt(...args),
   decrypt: (...args: unknown[]) => mockDecrypt(...args),
 }));

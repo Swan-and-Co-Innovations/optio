@@ -24,6 +24,12 @@ vi.mock("../services/task-service.js", () => ({
   getTaskEvents: (...args: unknown[]) => mockGetTaskEvents(...args),
 }));
 
+const mockListMessages = vi.fn().mockResolvedValue([]);
+
+vi.mock("../services/task-message-service.js", () => ({
+  listMessages: (...args: unknown[]) => mockListMessages(...args),
+}));
+
 import { commentRoutes } from "./comments.js";
 
 // ─── Helpers ───

@@ -1,7 +1,7 @@
 import { Queue, Worker } from "bullmq";
 import { eq, sql } from "drizzle-orm";
 import { db } from "../db/client.js";
-import { repoPods, podHealthEvents, tasks, taskEvents } from "../db/schema.js";
+import { repoPods, podHealthEvents, tasks, taskEvents, repos } from "../db/schema.js";
 import {
   cleanupIdleRepoPods,
   updateWorktreeState,
@@ -9,15 +9,15 @@ import {
   deleteNetworkPolicy,
 } from "../services/repo-pool-service.js";
 import { getRuntime } from "../services/container-service.js";
-import { TaskState } from "@optio/shared";
+import { TaskState, DEFAULT_STALL_THRESHOLD_MS } from "@optio/shared";
 import * as taskService from "../services/task-service.js";
 import { cleanupExpiredSessions } from "../services/session-service.js";
+import { publishEvent } from "../services/event-bus.js";
 import { logger } from "../logger.js";
 
-const connectionOpts = {
-  url: process.env.REDIS_URL ?? "redis://localhost:6379",
-  maxRetriesPerRequest: null,
-};
+import { getBullMQConnectionOptions } from "../services/redis-config.js";
+
+const connectionOpts = getBullMQConnectionOptions();
 
 export const repoCleanupQueue = new Queue("repo-cleanup", { connection: connectionOpts });
 
@@ -45,6 +45,17 @@ export function startRepoCleanupWorker() {
     {
       repeat: {
         every: parseInt(process.env.OPTIO_HEALTH_CHECK_INTERVAL ?? "60000", 10),
+      },
+    },
+  );
+
+  // Dedicated stall-check cadence (30s) — more responsive than the 60s health-check
+  repoCleanupQueue.add(
+    "stall-check",
+    {},
+    {
+      repeat: {
+        every: parseInt(process.env.OPTIO_STALL_CHECK_INTERVAL ?? "30000", 10),
       },
     },
   );
@@ -258,6 +269,89 @@ export function startRepoCleanupWorker() {
         } catch {
           // Pod may not be accessible — skip
         }
+      }
+
+      // ── Soft stall detection ──────────────────────────────────────────────
+      // Flag running tasks that have been silent beyond their threshold.
+      // This does NOT fail/retry the task — it's an observable warning only.
+      try {
+        const globalThreshold = parseInt(
+          process.env.OPTIO_STALL_THRESHOLD_MS ?? String(DEFAULT_STALL_THRESHOLD_MS),
+          10,
+        );
+
+        // Fetch all running tasks with lastActivityAt set
+        const runningTasks = await db
+          .select({
+            id: tasks.id,
+            repoUrl: tasks.repoUrl,
+            workspaceId: tasks.workspaceId,
+            lastActivityAt: tasks.lastActivityAt,
+            activitySubstate: tasks.activitySubstate,
+          })
+          .from(tasks)
+          .where(sql`${tasks.state} = 'running' AND ${tasks.lastActivityAt} IS NOT NULL`);
+
+        // Cache repo configs to avoid repeated queries
+        const repoConfigCache = new Map<string, typeof repos.$inferSelect | null>();
+
+        for (const task of runningTasks) {
+          const now = Date.now();
+          const lastActivity = new Date(task.lastActivityAt!).getTime();
+          const silentForMs = now - lastActivity;
+
+          // Get per-repo threshold
+          let repoConfig = repoConfigCache.get(task.repoUrl);
+          if (repoConfig === undefined) {
+            const [rc] = await db.select().from(repos).where(eq(repos.repoUrl, task.repoUrl));
+            repoConfig = rc ?? null;
+            repoConfigCache.set(task.repoUrl, repoConfig);
+          }
+          const threshold = taskService.getStallThresholdForRepo(repoConfig);
+
+          if (silentForMs >= threshold && task.activitySubstate !== "stalled") {
+            // Mark as stalled
+            await db
+              .update(tasks)
+              .set({ activitySubstate: "stalled" })
+              .where(eq(tasks.id, task.id));
+
+            // Get last log summary for the stall event
+            const lastLogSummary = await taskService.getLastLogSummary(task.id);
+
+            await publishEvent({
+              type: "task:stalled",
+              taskId: task.id,
+              lastActivityAt: task.lastActivityAt!.toISOString(),
+              silentForMs,
+              lastLogSummary,
+              timestamp: new Date().toISOString(),
+            });
+
+            logger.info(
+              { taskId: task.id, silentForMs, threshold },
+              "Task flagged as stalled (soft)",
+            );
+          } else if (silentForMs < threshold && task.activitySubstate === "stalled") {
+            // Recovered — activity flush in task-worker already handles this,
+            // but catch edge cases here too
+            await db
+              .update(tasks)
+              .set({ activitySubstate: "recovered" })
+              .where(eq(tasks.id, task.id));
+
+            await publishEvent({
+              type: "task:recovered",
+              taskId: task.id,
+              silentWasMs: silentForMs,
+              timestamp: new Date().toISOString(),
+            });
+
+            logger.info({ taskId: task.id }, "Task recovered from stall");
+          }
+        }
+      } catch (err) {
+        logger.warn({ err }, "Soft stall detection pass failed");
       }
 
       // Detect stale running/provisioning tasks (agent exec died without updating state)

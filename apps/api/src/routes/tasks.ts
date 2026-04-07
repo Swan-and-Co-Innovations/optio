@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
-import { TaskState } from "@optio/shared";
+import { TaskState, isTaskStalled, getSilentDuration } from "@optio/shared";
 import * as taskService from "../services/task-service.js";
 import * as dependencyService from "../services/dependency-service.js";
 import { taskQueue } from "../workers/task-worker.js";
@@ -57,7 +57,7 @@ const createTaskSchema = z.object({
     .string()
     .regex(/^[a-zA-Z0-9._\/-]+$/, "Invalid branch name")
     .optional(),
-  agentType: z.enum(["claude-code", "codex", "copilot"]).optional(),
+  agentType: z.enum(["claude-code", "codex", "copilot", "opencode"]).optional(),
   ticketSource: z.string().optional(),
   ticketExternalId: z.string().optional(),
   metadata: z.record(z.unknown()).optional(),
@@ -81,7 +81,16 @@ export async function taskRoutes(app: FastifyInstance) {
       offset,
       workspaceId,
     });
-    reply.send({ tasks: taskList, limit, offset });
+
+    // Enrich running tasks with isStalled flag (lightweight — no lastLogSummary)
+    const globalThreshold = parseInt(process.env.OPTIO_STALL_THRESHOLD_MS ?? "300000", 10);
+    const now = new Date();
+    const enriched = taskList.map((t) => ({
+      ...t,
+      isStalled: isTaskStalled(t, now, globalThreshold),
+    }));
+
+    reply.send({ tasks: enriched, limit, offset });
   });
 
   // Search tasks with advanced filtering and cursor-based pagination
@@ -131,7 +140,27 @@ export async function taskRoutes(app: FastifyInstance) {
     const { getPipelineProgress } = await import("../services/subtask-service.js");
     pipelineProgress = await getPipelineProgress(id);
 
-    reply.send({ task, pendingReason, pipelineProgress });
+    // Compute stall info for running tasks
+    let stallInfo = null;
+    if (task.state === "running" && task.lastActivityAt) {
+      const repoConfig = await taskService.getRepoConfig(task.repoUrl);
+      const thresholdMs = taskService.getStallThresholdForRepo(repoConfig);
+      const now = new Date();
+      const stalled = isTaskStalled(task, now, thresholdMs);
+      const silentForMs = getSilentDuration(task, now);
+
+      // Only fetch last log summary for stalled tasks (expensive query)
+      const lastLogSummary = stalled ? await taskService.getLastLogSummary(id) : undefined;
+
+      stallInfo = {
+        isStalled: stalled,
+        silentForMs,
+        thresholdMs,
+        lastLogSummary,
+      };
+    }
+
+    reply.send({ task, pendingReason, pipelineProgress, stallInfo });
   });
 
   // Create task — member+

@@ -1,7 +1,7 @@
 import { eq, and, isNull } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { repos, workspaces } from "../db/schema.js";
-import { encrypt, decrypt } from "./secret-service.js";
+import { encrypt, decrypt, ALG_AES_256_GCM_V1 } from "./secret-service.js";
 import { normalizeRepoUrl, parseRepoUrl } from "@optio/shared";
 
 export interface RepoRecord {
@@ -26,6 +26,11 @@ export interface RepoRecord {
   claudeEffort: string | null;
   copilotModel: string | null;
   copilotEffort: string | null;
+  opencodeModel: string | null;
+  opencodeAgent: string | null;
+  opencodeProvider: string | null;
+  geminiModel: string | null;
+  geminiApprovalMode: string | null;
   maxTurnsCoding: number | null;
   maxTurnsReview: number | null;
   autoResume: boolean;
@@ -62,9 +67,12 @@ function decryptRepoRow(row: typeof repos.$inferSelect): RepoRecord {
   if (row.encryptedSlackWebhookUrl && row.slackWebhookUrlIv && row.slackWebhookUrlAuthTag) {
     const aad = Buffer.from(`repo:${row.id}:slackWebhookUrl`);
     slackWebhookUrl = decrypt(
-      row.encryptedSlackWebhookUrl,
-      row.slackWebhookUrlIv,
-      row.slackWebhookUrlAuthTag,
+      {
+        alg: row.slackWebhookUrlAlg ?? ALG_AES_256_GCM_V1,
+        iv: row.slackWebhookUrlIv,
+        ciphertext: row.encryptedSlackWebhookUrl,
+        authTag: row.slackWebhookUrlAuthTag,
+      },
       aad,
     );
   }
@@ -72,6 +80,7 @@ function decryptRepoRow(row: typeof repos.$inferSelect): RepoRecord {
     encryptedSlackWebhookUrl: _e,
     slackWebhookUrlIv: _iv,
     slackWebhookUrlAuthTag: _tag,
+    slackWebhookUrlAlg: _alg,
     ...rest
   } = row;
   return { ...rest, slackWebhookUrl } as RepoRecord;
@@ -215,10 +224,11 @@ export async function updateRepo(
       setData.slackWebhookUrlAuthTag = null;
     } else {
       const aad = Buffer.from(`repo:${id}:slackWebhookUrl`);
-      const { encrypted, iv, authTag } = encrypt(slackWebhookUrl, aad);
-      setData.encryptedSlackWebhookUrl = encrypted;
-      setData.slackWebhookUrlIv = iv;
-      setData.slackWebhookUrlAuthTag = authTag;
+      const blob = encrypt(slackWebhookUrl, aad);
+      setData.encryptedSlackWebhookUrl = blob.ciphertext;
+      setData.slackWebhookUrlIv = blob.iv;
+      setData.slackWebhookUrlAuthTag = blob.authTag;
+      setData.slackWebhookUrlAlg = blob.alg;
     }
   }
 

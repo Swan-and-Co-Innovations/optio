@@ -17,6 +17,8 @@ import { getAdapter } from "@optio/agent-adapters";
 import { parseClaudeEvent } from "../services/agent-event-parser.js";
 import { parseCodexEvent } from "../services/codex-event-parser.js";
 import { parseCopilotEvent } from "../services/copilot-event-parser.js";
+import { parseOpenCodeEvent } from "../services/opencode-event-parser.js";
+import { parseGeminiEvent } from "../services/gemini-event-parser.js";
 import { checkExistingPr } from "../services/pr-detection-service.js";
 import { db } from "../db/client.js";
 import { tasks } from "../db/schema.js";
@@ -28,10 +30,13 @@ import { resolveSecretsForTask, retrieveSecretWithFallback } from "../services/s
 import { getPromptTemplate } from "../services/prompt-template-service.js";
 import { isGitHubAppConfigured } from "../services/github-app-service.js";
 import { getCredentialSecret } from "../services/credential-secret-service.js";
+import { subscribeToTaskMessages } from "../services/task-message-bus.js";
+import * as messageService from "../services/task-message-service.js";
 import { logger } from "../logger.js";
 
-const redisUrl = process.env.REDIS_URL ?? "redis://localhost:6379";
-const connectionOpts = { url: redisUrl, maxRetriesPerRequest: null };
+import { getBullMQConnectionOptions } from "../services/redis-config.js";
+
+const connectionOpts = getBullMQConnectionOptions();
 
 export const taskQueue = new Queue("tasks", { connection: connectionOpts });
 
@@ -232,6 +237,26 @@ export function startTaskWorker() {
                 taskWorkspaceId,
               ).catch(() => null)) as any) ?? undefined)
             : undefined;
+        const geminiAuthMode =
+          ((await retrieveSecretWithFallback("GEMINI_AUTH_MODE", "global", taskWorkspaceId).catch(
+            () => null,
+          )) as any) ?? "api-key";
+        const googleCloudProject =
+          geminiAuthMode === "vertex-ai"
+            ? (((await retrieveSecretWithFallback(
+                "GOOGLE_CLOUD_PROJECT",
+                "global",
+                taskWorkspaceId,
+              ).catch(() => null)) as any) ?? undefined)
+            : undefined;
+        const googleCloudLocation =
+          geminiAuthMode === "vertex-ai"
+            ? (((await retrieveSecretWithFallback(
+                "GOOGLE_CLOUD_LOCATION",
+                "global",
+                taskWorkspaceId,
+              ).catch(() => null)) as any) ?? undefined)
+            : undefined;
         const optioApiUrl = `http://${process.env.API_HOST ?? "host.docker.internal"}:${process.env.API_PORT ?? "4000"}`;
 
         // Load and render prompt template
@@ -292,6 +317,16 @@ export function startTaskWorker() {
           claudeEffort: repoConfig?.claudeEffort ?? undefined,
           copilotModel: repoConfig?.copilotModel ?? undefined,
           copilotEffort: repoConfig?.copilotEffort ?? undefined,
+          opencodeModel: repoConfig?.opencodeModel ?? undefined,
+          opencodeAgent: repoConfig?.opencodeAgent ?? undefined,
+          geminiAuthMode,
+          geminiModel: repoConfig?.geminiModel ?? undefined,
+          geminiApprovalMode:
+            (repoConfig?.geminiApprovalMode as "default" | "auto_edit" | "yolo") ?? undefined,
+          maxTurnsCoding: repoConfig?.maxTurnsCoding ?? undefined,
+          maxTurnsReview: repoConfig?.maxTurnsReview ?? undefined,
+          googleCloudProject,
+          googleCloudLocation,
         });
 
         // ── MCP servers & custom skills injection ────────────────────
@@ -533,8 +568,53 @@ export function startTaskWorker() {
           : undefined;
         let lastHeartbeat = Date.now();
         const HEARTBEAT_INTERVAL_MS = 60_000;
+        // Stall detection: debounced activity timestamp flush
+        let pendingActivityAt: Date | null = null;
+        let lastActivityFlushAt = 0;
+        const ACTIVITY_FLUSH_INTERVAL_MS = 5_000;
         // Buffer for partial NDJSON lines split across chunks
         let lineBuf = "";
+
+        // Subscribe to mid-task messages from users (only for claude-code)
+        let messageSubscription: { unsubscribe: () => void } | undefined;
+        if (task.agentType === "claude-code") {
+          messageSubscription = subscribeToTaskMessages(taskId, async (payload) => {
+            try {
+              // Format the message text — prefix with interrupt marker if needed
+              let text = payload.content;
+              if (payload.mode === "interrupt") {
+                text = `[URGENT INTERRUPT FROM USER — stop what you are doing and address this immediately] ${text}`;
+              }
+
+              // Write stream-json NDJSON line to stdin
+              const streamJsonMsg = JSON.stringify({
+                type: "user",
+                message: {
+                  role: "user",
+                  content: [{ type: "text", text }],
+                },
+              });
+              execSession.stdin.write(streamJsonMsg + "\n");
+
+              // Mark as delivered
+              await messageService.markDelivered(payload.messageId);
+              await publishEvent({
+                type: "task:message_delivered",
+                taskId,
+                messageId: payload.messageId,
+                timestamp: new Date().toISOString(),
+              });
+            } catch (err) {
+              log.warn({ messageId: payload.messageId, err }, "Failed to deliver task message");
+              await messageService
+                .markDeliveryError(
+                  payload.messageId,
+                  err instanceof Error ? err.message : "delivery failed",
+                )
+                .catch(() => {});
+            }
+          });
+        }
 
         // Capture stderr for diagnostics (e.g. bash parse errors, git warnings)
         let stderrData = "";
@@ -569,7 +649,11 @@ export function startTaskWorker() {
                 ? parseCodexEvent(line, taskId)
                 : task.agentType === "copilot"
                   ? parseCopilotEvent(line, taskId)
-                  : parseClaudeEvent(line, taskId);
+                  : task.agentType === "opencode"
+                    ? parseOpenCodeEvent(line, taskId)
+                    : task.agentType === "gemini"
+                      ? parseGeminiEvent(line, taskId)
+                      : parseClaudeEvent(line, taskId);
             if (parsed.sessionId && !sessionId) {
               sessionId = parsed.sessionId;
               await taskService.updateTaskSession(taskId, sessionId);
@@ -583,6 +667,11 @@ export function startTaskWorker() {
                 entry.type,
                 entry.metadata,
               );
+
+              // Stall detection: mark activity on meaningful parsed events
+              if (["text", "tool_use", "tool_result", "thinking", "system"].includes(entry.type)) {
+                pendingActivityAt = new Date();
+              }
 
               // Check for PR URL — only capture the first PR URL from agent output
               // that matches the task's own repo. Without repo validation, the
@@ -626,6 +715,19 @@ export function startTaskWorker() {
               }
             }
           }
+
+          // Debounced flush of lastActivityAt to avoid per-event DB writes
+          if (pendingActivityAt && Date.now() - lastActivityFlushAt > ACTIVITY_FLUSH_INTERVAL_MS) {
+            await taskService.updateTaskActivity(taskId, pendingActivityAt);
+            lastActivityFlushAt = Date.now();
+            pendingActivityAt = null;
+          }
+        }
+
+        // Final flush of pending activity timestamp
+        if (pendingActivityAt) {
+          await taskService.updateTaskActivity(taskId, pendingActivityAt);
+          pendingActivityAt = null;
         }
 
         // Flush any remaining partial line in the buffer
@@ -635,7 +737,11 @@ export function startTaskWorker() {
               ? parseCodexEvent(lineBuf, taskId)
               : task.agentType === "copilot"
                 ? parseCopilotEvent(lineBuf, taskId)
-                : parseClaudeEvent(lineBuf, taskId);
+                : task.agentType === "opencode"
+                  ? parseOpenCodeEvent(lineBuf, taskId)
+                  : task.agentType === "gemini"
+                    ? parseGeminiEvent(lineBuf, taskId)
+                    : parseClaudeEvent(lineBuf, taskId);
           for (const entry of parsed.entries) {
             await taskService.appendTaskLog(
               taskId,
@@ -646,6 +752,9 @@ export function startTaskWorker() {
             );
           }
         }
+
+        // Exec finished — clean up message subscription
+        messageSubscription?.unsubscribe();
 
         // Exec finished — determine result
         if (stderrData) {
@@ -1127,7 +1236,9 @@ export function buildAgentCommand(
         `echo "[optio] Running Claude Code${opts?.isReview ? " (review)" : ""}..."`,
         `claude -p "$OPTIO_PROMPT" \\`,
         `  --dangerously-skip-permissions \\`,
+        `  --input-format stream-json \\`,
         `  --output-format stream-json \\`,
+        `  --replay-user-messages \\`,
         `  --verbose \\`,
         `  --max-turns ${maxTurns} \\`,
         `  ${modelFlag} ${resumeFlag}`.trim(),
@@ -1151,6 +1262,32 @@ export function buildAgentCommand(
         `copilot --autopilot --yolo --max-autopilot-continues ${maxTurns} \\`,
         `  --output-format json --no-ask-user${modelFlag}${effortFlag} \\`,
         `  -p "$OPTIO_PROMPT"`,
+      ];
+    }
+    case "opencode": {
+      const modelFlag = env.OPTIO_OPENCODE_MODEL
+        ? ` --model ${JSON.stringify(env.OPTIO_OPENCODE_MODEL)}`
+        : "";
+      const agentFlag = env.OPTIO_OPENCODE_AGENT
+        ? ` --agent ${JSON.stringify(env.OPTIO_OPENCODE_AGENT)}`
+        : "";
+      const resumeFlag = opts?.resumeSessionId
+        ? ` --session ${JSON.stringify(opts.resumeSessionId)}`
+        : "";
+      return [
+        `echo "[optio] Running OpenCode (experimental)..."`,
+        `opencode run --format json${modelFlag}${agentFlag}${resumeFlag} "$OPTIO_PROMPT"`,
+      ];
+    }
+    case "gemini": {
+      const geminiModelFlag = env.OPTIO_GEMINI_MODEL
+        ? ` -m ${JSON.stringify(env.OPTIO_GEMINI_MODEL)}`
+        : "";
+      return [
+        `echo "[optio] Running Google Gemini${opts?.isReview ? " (review)" : ""}..."`,
+        `gemini -p "$OPTIO_PROMPT" \\`,
+        `  --output-format stream-json \\`,
+        `  --approval-mode yolo${geminiModelFlag}`,
       ];
     }
     default:
@@ -1187,6 +1324,33 @@ export function inferExitCode(agentType: string, logs: string): number {
       const hasFatalError =
         logs.includes("fatal:") || logs.includes("Error: authentication_failed");
       return hasResultError || hasErrorEvent || hasAuthError || hasFatalError ? 1 : 0;
+    }
+    case "opencode": {
+      // OpenCode: similar to Codex — look for error events and provider-specific failures
+      const hasErrorEvent = logs.includes('"type":"error"') || logs.includes('"type": "error"');
+      const hasApiErrorEnvelope = /"error"\s*:\s*\{\s*"message"/.test(logs);
+      const hasAuthError =
+        /ANTHROPIC_API_KEY|OPENAI_API_KEY|GROQ_API_KEY|invalid.*api.?key|unauthorized|authentication.*failed/i.test(
+          logs,
+        );
+      const hasModelError = /model_not_found|model.*not found|does not exist.*model/i.test(logs);
+      const hasFatalError =
+        logs.includes("fatal:") || logs.includes("Error: authentication_failed");
+      return hasErrorEvent || hasApiErrorEnvelope || hasAuthError || hasModelError || hasFatalError
+        ? 1
+        : 0;
+    }
+    case "gemini": {
+      const hasErrorEvent = logs.includes('"type":"error"') || logs.includes('"type": "error"');
+      const hasAuthError = /GEMINI_API_KEY|GOOGLE_API_KEY|permission denied|unauthorized/i.test(
+        logs,
+      );
+      const hasQuotaError = /quota|resource.?exhausted|rate.?limit/i.test(logs);
+      const hasModelError = /model.*not found|model_not_found|does not exist.*model/i.test(logs);
+      const hasTurnLimit = /turn.?limit|exit code 53/i.test(logs);
+      return hasErrorEvent || hasAuthError || hasQuotaError || hasModelError || hasTurnLimit
+        ? 1
+        : 0;
     }
     case "claude-code":
     default: {

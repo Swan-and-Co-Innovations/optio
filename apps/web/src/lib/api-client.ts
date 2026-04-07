@@ -69,9 +69,17 @@ export const api = {
   },
 
   getTask: (id: string) =>
-    request<{ task: any; pendingReason?: string | null; pipelineProgress?: any | null }>(
-      `/api/tasks/${id}`,
-    ),
+    request<{
+      task: any;
+      pendingReason?: string | null;
+      pipelineProgress?: any | null;
+      stallInfo?: {
+        isStalled: boolean;
+        silentForMs: number;
+        thresholdMs: number;
+        lastLogSummary?: string;
+      } | null;
+    }>(`/api/tasks/${id}`),
 
   createTask: (data: {
     title: string;
@@ -156,6 +164,15 @@ export const api = {
     request<void>(`/api/tasks/${taskId}/comments/${commentId}`, { method: "DELETE" }),
 
   getTaskActivity: (id: string) => request<{ activity: any[] }>(`/api/tasks/${id}/activity`),
+
+  // Task Messages (mid-task user → agent messaging)
+  sendTaskMessage: (id: string, content: string, mode: "soft" | "interrupt" = "soft") =>
+    request<{ message: any }>(`/api/tasks/${id}/message`, {
+      method: "POST",
+      body: JSON.stringify({ content, mode }),
+    }),
+
+  getTaskMessages: (id: string) => request<{ messages: any[] }>(`/api/tasks/${id}/messages`),
 
   // Secrets
   listSecrets: (scope?: string) => {
@@ -366,6 +383,12 @@ export const api = {
       "/api/setup/validate/copilot-token",
       { method: "POST", body: JSON.stringify({ token }) },
     ),
+
+  validateGeminiKey: (key: string) =>
+    request<{ valid: boolean; error?: string }>("/api/setup/validate/gemini-key", {
+      method: "POST",
+      body: JSON.stringify({ key }),
+    }),
 
   validateRepo: (repoUrl: string, token?: string) =>
     request<{
@@ -1032,4 +1055,38 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(data),
     }),
+
+  // Push Notifications
+  getVapidPublicKey: () => request<{ publicKey: string }>("/api/notifications/vapid-public-key"),
+
+  subscribePush: (data: {
+    endpoint: string;
+    keys: { p256dh: string; auth: string };
+    userAgent?: string;
+  }) =>
+    request<{ ok: boolean }>("/api/notifications/subscribe", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  unsubscribePush: (data: { endpoint: string }) =>
+    request<void>("/api/notifications/subscribe", {
+      method: "DELETE",
+      body: JSON.stringify(data),
+    }),
+
+  listPushSubscriptions: () =>
+    request<{ subscriptions: any[] }>("/api/notifications/subscriptions"),
+
+  getNotificationPreferences: () =>
+    request<{ preferences: Record<string, { push: boolean }> }>("/api/notifications/preferences"),
+
+  updateNotificationPreferences: (prefs: Record<string, { push: boolean }>) =>
+    request<{ preferences: Record<string, { push: boolean }> }>("/api/notifications/preferences", {
+      method: "PUT",
+      body: JSON.stringify(prefs),
+    }),
+
+  testPushNotification: () =>
+    request<{ sent: number }>("/api/notifications/test", { method: "POST" }),
 };

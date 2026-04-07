@@ -22,4 +22,5 @@ export * from "./types/optio-action.js";
 export * from "./types/git-platform.js";
 export * from "./utils/parse-repo-url.js";
 export * from "./utils/ssrf.js";
+export * from "./utils/is-stalled.js";
 export * from "./optio-tools.js";

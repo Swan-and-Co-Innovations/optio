@@ -8,6 +8,7 @@ export function useTask(id: string) {
   const [events, setEvents] = useState<any[]>([]);
   const [pendingReason, setPendingReason] = useState<string | null>(null);
   const [pipelineProgress, setPipelineProgress] = useState<any>(null);
+  const [stallInfo, setStallInfo] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -17,6 +18,7 @@ export function useTask(id: string) {
       setTask(taskRes.task);
       setPendingReason(taskRes.pendingReason ?? null);
       setPipelineProgress(taskRes.pipelineProgress ?? null);
+      setStallInfo(taskRes.stallInfo ?? null);
       setEvents(eventsRes.events);
       setError(null);
     } catch (err) {
@@ -30,5 +32,5 @@ export function useTask(id: string) {
     refresh();
   }, [refresh]);
 
-  return { task, events, pendingReason, pipelineProgress, loading, error, refresh };
+  return { task, events, pendingReason, pipelineProgress, stallInfo, loading, error, refresh };
 }

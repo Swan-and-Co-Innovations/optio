@@ -295,6 +295,48 @@
       "when": 1776528000000,
       "tag": "0040_workspace_allow_dind",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1776614400000,
+      "tag": "0041_encryption_alg_version",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1776700800000,
+      "tag": "0042_opencode_repo_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1776787200000,
+      "tag": "0042_task_messages",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1776873600000,
+      "tag": "0044_push_notifications",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1776873600000,
+      "tag": "0043_gemini_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1776960000000,
+      "tag": "0045_stall_detection",
+      "breakpoints": true
     }
   ]
 }

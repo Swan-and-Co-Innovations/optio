@@ -2,6 +2,7 @@ import { assertMinOpenSSL } from "./openssl-check.js";
 import Fastify, { type FastifyError } from "fastify";
 import { Redis } from "ioredis";
 import cors from "@fastify/cors";
+import { redisConnectionUrl, redisTlsOptions } from "./services/redis-config.js";
 import formbody from "@fastify/formbody";
 import rateLimit from "@fastify/rate-limit";
 import websocket from "@fastify/websocket";
@@ -24,6 +25,7 @@ import { webhookRoutes } from "./routes/webhooks.js";
 import { sessionRoutes } from "./routes/sessions.js";
 import { scheduleRoutes } from "./routes/schedules.js";
 import { commentRoutes } from "./routes/comments.js";
+import { messageRoutes } from "./routes/messages.js";
 import { slackRoutes } from "./routes/slack.js";
 import { taskTemplateRoutes } from "./routes/task-templates.js";
 import { workspaceRoutes } from "./routes/workspaces.js";
@@ -31,6 +33,7 @@ import { dependencyRoutes } from "./routes/dependencies.js";
 import { workflowRoutes } from "./routes/workflows.js";
 import { mcpServerRoutes } from "./routes/mcp-servers.js";
 import { skillRoutes } from "./routes/skills.js";
+import { notificationRoutes } from "./routes/notifications.js";
 import { optioRoutes } from "./routes/optio.js";
 import { optioSettingsRoutes } from "./routes/optio-settings.js";
 import githubAppRoutes from "./routes/github-app.js";
@@ -66,12 +69,11 @@ export async function buildServer() {
     credentials: true,
     methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   });
-  const redisUrl = process.env.REDIS_URL ?? "redis://localhost:6379";
   await app.register(rateLimit, {
     max: 100,
     timeWindow: "1 minute",
     allowList: ["127.0.0.1", "::1"],
-    redis: new Redis(redisUrl),
+    redis: new Redis(redisConnectionUrl, { tls: redisTlsOptions }),
   });
   await app.register(formbody);
   await app.register(websocket, {
@@ -110,6 +112,7 @@ export async function buildServer() {
   await app.register(sessionRoutes);
   await app.register(scheduleRoutes);
   await app.register(commentRoutes);
+  await app.register(messageRoutes);
   await app.register(slackRoutes);
   await app.register(taskTemplateRoutes);
   await app.register(workspaceRoutes);
@@ -117,6 +120,7 @@ export async function buildServer() {
   await app.register(workflowRoutes);
   await app.register(mcpServerRoutes);
   await app.register(skillRoutes);
+  await app.register(notificationRoutes);
   await app.register(optioRoutes);
   await app.register(optioSettingsRoutes);
   await app.register(githubAppRoutes);

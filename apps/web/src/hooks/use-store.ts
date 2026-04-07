@@ -15,6 +15,9 @@ export interface TaskSummary {
   parentTaskId?: string;
   ticketExternalId?: string;
   pendingReason?: string | null;
+  lastActivityAt?: string;
+  activitySubstate?: string;
+  isStalled?: boolean;
   createdAt: string;
   updatedAt: string;
 }

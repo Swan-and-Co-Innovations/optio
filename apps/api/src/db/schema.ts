@@ -4,6 +4,7 @@ import {
   text,
   timestamp,
   integer,
+  smallint,
   jsonb,
   pgEnum,
   boolean,
@@ -66,6 +67,12 @@ export const workspaceMembers = pgTable(
 
 // ── Task enums ──────────────────────────────────────────────────────────────
 
+export const taskActivitySubstateEnum = pgEnum("task_activity_substate", [
+  "active",
+  "stalled",
+  "recovered",
+]);
+
 export const taskStateEnum = pgEnum("task_state", [
   "pending",
   "waiting_on_deps",
@@ -118,7 +125,10 @@ export const tasks = pgTable(
     workflowRunId: uuid("workflow_run_id"), // nullable FK to workflow_runs
     createdBy: uuid("created_by"), // nullable FK to users (null when auth is disabled)
     ignoreOffPeak: boolean("ignore_off_peak").notNull().default(false),
+    lastActivityAt: timestamp("last_activity_at", { withTimezone: true }), // stall detection: last parsed agent event
+    activitySubstate: taskActivitySubstateEnum("activity_substate").notNull().default("active"),
     workspaceId: uuid("workspace_id"), // nullable for backward compat; new tasks should always set this
+    lastMessageAt: timestamp("last_message_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     startedAt: timestamp("started_at", { withTimezone: true }),
@@ -183,6 +193,7 @@ export const secrets = pgTable(
     encryptedValue: bytea("encrypted_value").notNull(),
     iv: bytea("iv").notNull(),
     authTag: bytea("auth_tag").notNull(),
+    alg: smallint("alg").notNull().default(1), // 1 = AES_256_GCM_V1
     workspaceId: uuid("workspace_id"), // nullable for backward compat
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -217,6 +228,11 @@ export const repos = pgTable(
     claudeEffort: text("claude_effort").default("high"), // "low", "medium", "high"
     copilotModel: text("copilot_model"), // null = use copilot default
     copilotEffort: text("copilot_effort"), // "low", "medium", "high"
+    opencodeModel: text("opencode_model"), // e.g. "anthropic/claude-sonnet-4", null = OpenCode default
+    opencodeAgent: text("opencode_agent"), // e.g. "build", "plan", null = default
+    opencodeProvider: text("opencode_provider"), // "anthropic" | "openai" | ... for default provider inference
+    geminiModel: text("gemini_model").default("gemini-2.5-pro"),
+    geminiApprovalMode: text("gemini_approval_mode").default("yolo"), // "default" | "auto_edit" | "yolo"
     maxTurnsCoding: integer("max_turns_coding"), // null = use global default (250)
     maxTurnsReview: integer("max_turns_review"), // null = use global default (10)
     autoResume: boolean("auto_resume").notNull().default(false),
@@ -232,11 +248,13 @@ export const repos = pgTable(
     encryptedSlackWebhookUrl: bytea("encrypted_slack_webhook_url"), // AES-256-GCM encrypted Slack webhook URL
     slackWebhookUrlIv: bytea("slack_webhook_url_iv"),
     slackWebhookUrlAuthTag: bytea("slack_webhook_url_auth_tag"),
+    slackWebhookUrlAlg: smallint("slack_webhook_url_alg").notNull().default(1), // 1 = AES_256_GCM_V1
     slackChannel: text("slack_channel"), // override channel (optional)
     slackNotifyOn: jsonb("slack_notify_on").$type<string[]>(), // e.g. ["completed","failed","pr_opened","needs_attention"]
     slackEnabled: boolean("slack_enabled").notNull().default(false),
     networkPolicy: text("network_policy").notNull().default("unrestricted"), // "unrestricted" | "restricted"
     secretProxy: boolean("secret_proxy").notNull().default(false), // Envoy sidecar proxy for secret isolation
+    stallThresholdMs: integer("stall_threshold_ms"), // per-repo override for stall detection (null = use global default)
     offPeakOnly: boolean("off_peak_only").notNull().default(false),
     cpuRequest: text("cpu_request"), // e.g. "500m", "1000m", "2000m" — K8s CPU request
     cpuLimit: text("cpu_limit"), // e.g. "2000m", "4000m" — K8s CPU limit
@@ -329,6 +347,7 @@ export const webhooks = pgTable(
     encryptedSecret: bytea("encrypted_secret"), // AES-256-GCM encrypted signing secret
     secretIv: bytea("secret_iv"),
     secretAuthTag: bytea("secret_auth_tag"),
+    secretAlg: smallint("secret_alg").notNull().default(1), // 1 = AES_256_GCM_V1
     description: text("description"),
     active: boolean("active").notNull().default(true),
     createdBy: uuid("created_by"),
@@ -456,6 +475,32 @@ export const taskComments = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index("task_comments_task_id_idx").on(table.taskId)],
+);
+
+// ── Task Messages (user → agent mid-task messaging) ──────────────────────────
+
+export const taskMessageModeEnum = pgEnum("task_message_mode", ["soft", "interrupt"]);
+
+export const taskMessages = pgTable(
+  "task_messages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    taskId: uuid("task_id")
+      .notNull()
+      .references(() => tasks.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").references(() => users.id),
+    content: text("content").notNull(),
+    mode: taskMessageModeEnum("mode").notNull().default("soft"),
+    workspaceId: uuid("workspace_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    ackedAt: timestamp("acked_at", { withTimezone: true }),
+    deliveryError: text("delivery_error"),
+  },
+  (table) => [
+    index("task_messages_task_id_idx").on(table.taskId),
+    index("task_messages_task_created_idx").on(table.taskId, table.createdAt),
+  ],
 );
 
 export const taskTemplates = pgTable(
@@ -660,6 +705,50 @@ export const reviewDrafts = pgTable(
   (table) => [
     index("review_drafts_task_id_idx").on(table.taskId),
     index("review_drafts_state_idx").on(table.state),
+  ],
+);
+
+// ── Push Subscriptions (Web Push API) ────────────────────────────────────────
+
+export const pushSubscriptions = pgTable(
+  "push_subscriptions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    endpoint: text("endpoint").notNull(),
+    p256dh: text("p256dh").notNull(),
+    auth: text("auth").notNull(),
+    userAgent: text("user_agent"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    lastErrorAt: timestamp("last_error_at", { withTimezone: true }),
+    failureCount: integer("failure_count").notNull().default(0),
+  },
+  (table) => [
+    unique("push_subscriptions_user_endpoint_key").on(table.userId, table.endpoint),
+    index("push_subscriptions_user_id_idx").on(table.userId),
+  ],
+);
+
+// ── Notification Preferences ─────────────────────────────────────────────────
+
+export const notificationPreferences = pgTable(
+  "notification_preferences",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    workspaceId: uuid("workspace_id"), // reserved for future per-workspace prefs
+    preferences: jsonb("preferences").$type<Record<string, { push: boolean }>>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique("notification_preferences_user_key").on(table.userId),
+    index("notification_preferences_user_id_idx").on(table.userId),
   ],
 );
 
