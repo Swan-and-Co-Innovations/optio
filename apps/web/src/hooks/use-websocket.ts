@@ -63,6 +63,21 @@ export function useGlobalWebSocket() {
         .updateTask(event.taskId, { pendingReason: event.data?.pendingReason ?? null });
     });
 
+    client.on("task:stalled", (event) => {
+      useStore.getState().updateTask(event.taskId, {
+        activitySubstate: "stalled",
+        isStalled: true,
+        lastActivityAt: event.lastActivityAt,
+      });
+    });
+
+    client.on("task:recovered", (event) => {
+      useStore.getState().updateTask(event.taskId, {
+        activitySubstate: "recovered",
+        isStalled: false,
+      });
+    });
+
     client.on("task:created", (event) => {
       useStore.getState().addTask({
         id: event.taskId,

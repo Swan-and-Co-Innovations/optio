@@ -11,6 +11,8 @@ export enum TaskState {
   CANCELLED = "cancelled",
 }
 
+export type TaskActivitySubstate = "active" | "stalled" | "recovered";
+
 export interface Task {
   id: string;
   title: string;
@@ -28,10 +30,19 @@ export interface Task {
   metadata?: Record<string, unknown>;
   retryCount: number;
   maxRetries: number;
+  lastActivityAt?: Date;
+  activitySubstate?: TaskActivitySubstate;
   createdAt: Date;
   updatedAt: Date;
   startedAt?: Date;
   completedAt?: Date;
+}
+
+export interface StallInfo {
+  isStalled: boolean;
+  silentForMs: number;
+  thresholdMs: number;
+  lastLogSummary?: string;
 }
 
 export interface TaskEvent {

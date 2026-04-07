@@ -69,9 +69,17 @@ export const api = {
   },
 
   getTask: (id: string) =>
-    request<{ task: any; pendingReason?: string | null; pipelineProgress?: any | null }>(
-      `/api/tasks/${id}`,
-    ),
+    request<{
+      task: any;
+      pendingReason?: string | null;
+      pipelineProgress?: any | null;
+      stallInfo?: {
+        isStalled: boolean;
+        silentForMs: number;
+        thresholdMs: number;
+        lastLogSummary?: string;
+      } | null;
+    }>(`/api/tasks/${id}`),
 
   createTask: (data: {
     title: string;

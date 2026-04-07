@@ -1,6 +1,10 @@
-import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, it, expect, afterEach } from "vitest";
+import { render, screen, cleanup } from "@testing-library/react";
 import { StateBadge } from "./state-badge";
+
+afterEach(() => {
+  cleanup();
+});
 
 describe("StateBadge", () => {
   it("renders the correct label for known states", () => {
@@ -59,5 +63,21 @@ describe("StateBadge", () => {
     const { container } = render(<StateBadge state="completed" />);
     const dot = container.querySelector(".rounded-full");
     expect(dot?.className).not.toContain("glow-dot");
+  });
+
+  it("renders Stuck pill when isStalled is true", () => {
+    const { rerender } = render(<StateBadge state="running" isStalled={true} />);
+    expect(screen.getByText("Running")).toBeInTheDocument();
+    expect(screen.getByText("Stuck")).toBeInTheDocument();
+
+    // does not render Stuck pill when isStalled is false
+    rerender(<StateBadge state="running" isStalled={false} />);
+    expect(screen.getByText("Running")).toBeInTheDocument();
+    expect(screen.queryByText("Stuck")).not.toBeInTheDocument();
+
+    // does not render Stuck pill when isStalled is undefined
+    rerender(<StateBadge state="running" />);
+    expect(screen.getByText("Running")).toBeInTheDocument();
+    expect(screen.queryByText("Stuck")).not.toBeInTheDocument();
   });
 });

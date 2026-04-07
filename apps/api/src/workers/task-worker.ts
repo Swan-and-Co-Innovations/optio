@@ -568,6 +568,10 @@ export function startTaskWorker() {
           : undefined;
         let lastHeartbeat = Date.now();
         const HEARTBEAT_INTERVAL_MS = 60_000;
+        // Stall detection: debounced activity timestamp flush
+        let pendingActivityAt: Date | null = null;
+        let lastActivityFlushAt = 0;
+        const ACTIVITY_FLUSH_INTERVAL_MS = 5_000;
         // Buffer for partial NDJSON lines split across chunks
         let lineBuf = "";
 
@@ -664,6 +668,11 @@ export function startTaskWorker() {
                 entry.metadata,
               );
 
+              // Stall detection: mark activity on meaningful parsed events
+              if (["text", "tool_use", "tool_result", "thinking", "system"].includes(entry.type)) {
+                pendingActivityAt = new Date();
+              }
+
               // Check for PR URL — only capture the first PR URL from agent output
               // that matches the task's own repo. Without repo validation, the
               // agent referencing another repo's PR (e.g. via gh pr list on a
@@ -706,6 +715,19 @@ export function startTaskWorker() {
               }
             }
           }
+
+          // Debounced flush of lastActivityAt to avoid per-event DB writes
+          if (pendingActivityAt && Date.now() - lastActivityFlushAt > ACTIVITY_FLUSH_INTERVAL_MS) {
+            await taskService.updateTaskActivity(taskId, pendingActivityAt);
+            lastActivityFlushAt = Date.now();
+            pendingActivityAt = null;
+          }
+        }
+
+        // Final flush of pending activity timestamp
+        if (pendingActivityAt) {
+          await taskService.updateTaskActivity(taskId, pendingActivityAt);
+          pendingActivityAt = null;
         }
 
         // Flush any remaining partial line in the buffer

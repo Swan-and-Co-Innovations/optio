@@ -330,6 +330,13 @@
       "when": 1776873600000,
       "tag": "0043_gemini_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1776960000000,
+      "tag": "0045_stall_detection",
+      "breakpoints": true
     }
   ]
 }

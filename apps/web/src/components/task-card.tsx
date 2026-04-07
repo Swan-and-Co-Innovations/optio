@@ -7,7 +7,16 @@ import { StateBadge } from "./state-badge";
 import { classifyError } from "@optio/shared";
 import { api } from "@/lib/api-client";
 import { formatRelativeTime } from "@/lib/utils";
-import { ExternalLink, RotateCcw, Bot, Link2, Clock, Moon, Play } from "lucide-react";
+import {
+  ExternalLink,
+  RotateCcw,
+  Bot,
+  Link2,
+  Clock,
+  Moon,
+  Play,
+  AlertTriangle,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useOptioChatStore } from "@/hooks/use-optio-chat";
 
@@ -32,6 +41,9 @@ interface TaskSummary {
   taskType?: string;
   parentTaskId?: string;
   pendingReason?: string | null;
+  lastActivityAt?: string;
+  activitySubstate?: string;
+  isStalled?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -88,7 +100,7 @@ export const TaskCard = React.memo(function TaskCard({ task, subtasks }: TaskCar
                 ${parseFloat(task.costUsd).toFixed(2)}
               </span>
             )}
-            <StateBadge state={task.state} />
+            <StateBadge state={task.state} isStalled={task.isStalled} />
           </div>
         </div>
 
@@ -137,6 +149,17 @@ export const TaskCard = React.memo(function TaskCard({ task, subtasks }: TaskCar
               <Play className="w-3 h-3" />
               Run Now
             </button>
+          </div>
+        )}
+
+        {/* Stall indicator */}
+        {task.state === "running" && task.isStalled && (
+          <div className="mt-3 px-3 py-2 rounded-lg bg-warning/5 border border-warning/10 flex items-center gap-2">
+            <AlertTriangle className="w-3 h-3 text-warning/60 shrink-0" />
+            <span className="text-xs text-warning/70">
+              No activity for{" "}
+              {task.lastActivityAt ? formatRelativeTime(task.lastActivityAt) : "a while"}
+            </span>
           </div>
         )}
 

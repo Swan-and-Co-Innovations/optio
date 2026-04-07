@@ -6,6 +6,8 @@ export type WsEvent =
   | TaskLogEvent
   | TaskCreatedEvent
   | TaskPendingReasonEvent
+  | TaskStalledEvent
+  | TaskRecoveredEvent
   | AuthFailedEvent
   | SessionCreatedEvent
   | SessionEndedEvent
@@ -66,6 +68,22 @@ export interface SessionCreatedEvent {
 export interface SessionEndedEvent {
   type: "session:ended";
   sessionId: string;
+  timestamp: string;
+}
+
+export interface TaskStalledEvent {
+  type: "task:stalled";
+  taskId: string;
+  lastActivityAt: string; // ISO
+  silentForMs: number;
+  lastLogSummary?: string; // e.g. "Bash $ npm test"
+  timestamp: string;
+}
+
+export interface TaskRecoveredEvent {
+  type: "task:recovered";
+  taskId: string;
+  silentWasMs: number;
   timestamp: string;
 }
 

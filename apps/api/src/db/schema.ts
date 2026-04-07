@@ -67,6 +67,12 @@ export const workspaceMembers = pgTable(
 
 // ── Task enums ──────────────────────────────────────────────────────────────
 
+export const taskActivitySubstateEnum = pgEnum("task_activity_substate", [
+  "active",
+  "stalled",
+  "recovered",
+]);
+
 export const taskStateEnum = pgEnum("task_state", [
   "pending",
   "waiting_on_deps",
@@ -119,6 +125,8 @@ export const tasks = pgTable(
     workflowRunId: uuid("workflow_run_id"), // nullable FK to workflow_runs
     createdBy: uuid("created_by"), // nullable FK to users (null when auth is disabled)
     ignoreOffPeak: boolean("ignore_off_peak").notNull().default(false),
+    lastActivityAt: timestamp("last_activity_at", { withTimezone: true }), // stall detection: last parsed agent event
+    activitySubstate: taskActivitySubstateEnum("activity_substate").notNull().default("active"),
     workspaceId: uuid("workspace_id"), // nullable for backward compat; new tasks should always set this
     lastMessageAt: timestamp("last_message_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -246,6 +254,7 @@ export const repos = pgTable(
     slackEnabled: boolean("slack_enabled").notNull().default(false),
     networkPolicy: text("network_policy").notNull().default("unrestricted"), // "unrestricted" | "restricted"
     secretProxy: boolean("secret_proxy").notNull().default(false), // Envoy sidecar proxy for secret isolation
+    stallThresholdMs: integer("stall_threshold_ms"), // per-repo override for stall detection (null = use global default)
     offPeakOnly: boolean("off_peak_only").notNull().default(false),
     cpuRequest: text("cpu_request"), // e.g. "500m", "1000m", "2000m" — K8s CPU request
     cpuLimit: text("cpu_limit"), // e.g. "2000m", "4000m" — K8s CPU limit

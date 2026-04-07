@@ -79,11 +79,18 @@ vi.mock("../db/schema.js", () => ({
     worktreeState: "tasks.worktreeState",
     retryCount: "tasks.retryCount",
     maxRetries: "tasks.maxRetries",
+    lastActivityAt: "tasks.lastActivityAt",
+    activitySubstate: "tasks.activitySubstate",
+    workspaceId: "tasks.workspaceId",
   },
   taskEvents: {
     id: "taskEvents.id",
     taskId: "taskEvents.taskId",
     trigger: "taskEvents.trigger",
+  },
+  repos: {
+    repoUrl: "repos.repoUrl",
+    stallThresholdMs: "repos.stallThresholdMs",
   },
 }));
 
@@ -115,10 +122,20 @@ vi.mock("../services/container-service.js", () => ({
 
 const mockTransitionTask = vi.fn().mockResolvedValue(undefined);
 const mockUpdateTaskResult = vi.fn().mockResolvedValue(undefined);
+const mockGetStallThreshold = vi.fn().mockReturnValue(300_000);
+const mockGetLastLogSummary = vi.fn().mockResolvedValue(undefined);
 
 vi.mock("../services/task-service.js", () => ({
   transitionTask: (...args: unknown[]) => mockTransitionTask(...args),
   updateTaskResult: (...args: unknown[]) => mockUpdateTaskResult(...args),
+  getStallThresholdForRepo: (...args: unknown[]) => mockGetStallThreshold(...args),
+  getLastLogSummary: (...args: unknown[]) => mockGetLastLogSummary(...args),
+}));
+
+const mockPublishEvent = vi.fn().mockResolvedValue(undefined);
+
+vi.mock("../services/event-bus.js", () => ({
+  publishEvent: (...args: unknown[]) => mockPublishEvent(...args),
 }));
 
 const mockCleanupExpiredSessions = vi.fn().mockResolvedValue(0);
@@ -226,6 +243,9 @@ beforeEach(() => {
   mockDeleteNetPolicy.mockReset().mockResolvedValue(undefined);
   mockCleanupExpiredSessions.mockReset().mockResolvedValue(0);
   mockTaskQueueAdd.mockReset().mockResolvedValue(undefined);
+  mockPublishEvent.mockReset().mockResolvedValue(undefined);
+  mockGetStallThreshold.mockReset().mockReturnValue(300_000);
+  mockGetLastLogSummary.mockReset().mockResolvedValue(undefined);
   selectCallIndex = 0;
   originalDateNow = Date.now;
 });
@@ -251,6 +271,7 @@ describe("repo-cleanup-worker", () => {
       // select #1: staleTasks returns empty
       selectResults = [
         [makePod({ state: "provisioning" })],
+        [], // soft stall detection: running tasks
         [], // stale tasks
       ];
 
@@ -262,6 +283,7 @@ describe("repo-cleanup-worker", () => {
     it("skips pods without podName", async () => {
       selectResults = [
         [makePod({ podName: null })],
+        [], // soft stall detection: running tasks
         [], // stale tasks
       ];
 
@@ -275,6 +297,7 @@ describe("repo-cleanup-worker", () => {
       selectResults = [
         [pod], // repoPods
         [], // active tasks on the dead pod
+        [], // soft stall detection: running tasks
         [], // stale tasks
       ];
 
@@ -294,6 +317,7 @@ describe("repo-cleanup-worker", () => {
       selectResults = [
         [pod], // repoPods
         [], // active tasks
+        [], // soft stall detection: running tasks
         [], // stale tasks
       ];
 
@@ -316,6 +340,7 @@ describe("repo-cleanup-worker", () => {
       selectResults = [
         [pod], // repoPods
         [task], // active tasks on the dead pod
+        [], // soft stall detection: running tasks
         [], // stale tasks
       ];
 
@@ -343,6 +368,7 @@ describe("repo-cleanup-worker", () => {
       selectResults = [
         [pod], // repoPods
         [], // active tasks
+        [], // soft stall detection: running tasks
         [], // stale tasks
       ];
 
@@ -363,6 +389,7 @@ describe("repo-cleanup-worker", () => {
       const pod = makePod({ state: "error" });
       selectResults = [
         [pod], // repoPods
+        [], // soft stall detection: running tasks
         [], // stale tasks
       ];
 
@@ -389,6 +416,7 @@ describe("repo-cleanup-worker", () => {
       const pod = makePod();
       selectResults = [
         [pod], // repoPods
+        [], // soft stall detection: running tasks
         [], // stale tasks
       ];
 
@@ -414,6 +442,7 @@ describe("repo-cleanup-worker", () => {
       const pod = makePod({ state: "error" });
       selectResults = [
         [pod], // repoPods
+        [], // soft stall detection: running tasks
         [], // stale tasks
       ];
 
@@ -438,6 +467,7 @@ describe("repo-cleanup-worker", () => {
       selectResults = [
         [pod], // repoPods
         [], // task lookup for orphan worktree (no task found)
+        [], // soft stall detection: running tasks
         [], // stale tasks
       ];
 
@@ -470,6 +500,7 @@ describe("repo-cleanup-worker", () => {
             maxRetries: 3,
           },
         ], // task lookup
+        [], // soft stall detection: running tasks
         [], // stale tasks
       ];
 
@@ -497,6 +528,7 @@ describe("repo-cleanup-worker", () => {
             maxRetries: 3,
           },
         ],
+        [], // soft stall detection: running tasks
         [], // stale tasks
       ];
 
@@ -524,6 +556,7 @@ describe("repo-cleanup-worker", () => {
             maxRetries: 3,
           },
         ],
+        [], // soft stall detection: running tasks
         [], // stale tasks
       ];
 
@@ -550,6 +583,7 @@ describe("repo-cleanup-worker", () => {
             maxRetries: 3,
           },
         ],
+        [], // soft stall detection: running tasks
         [], // stale tasks
       ];
 
@@ -579,6 +613,7 @@ describe("repo-cleanup-worker", () => {
             maxRetries: 3,
           },
         ],
+        [], // soft stall detection: running tasks
         [], // stale tasks
       ];
 
@@ -610,6 +645,7 @@ describe("repo-cleanup-worker", () => {
             maxRetries: 3,
           },
         ],
+        [], // soft stall detection: running tasks
         [], // stale tasks
       ];
 
@@ -638,6 +674,7 @@ describe("repo-cleanup-worker", () => {
             maxRetries: 3,
           },
         ],
+        [], // soft stall detection: running tasks
         [], // stale tasks
       ];
 
@@ -664,6 +701,7 @@ describe("repo-cleanup-worker", () => {
             maxRetries: 3,
           },
         ],
+        [], // soft stall detection: running tasks
         [], // stale tasks
       ];
 
@@ -689,6 +727,7 @@ describe("repo-cleanup-worker", () => {
       });
       selectResults = [
         [], // repoPods — no pods
+        [], // soft stall detection: running tasks with lastActivityAt
         [staleTask], // stale tasks query
         [{ count: 1 }], // staleRetryCount < MAX_STALE_RETRIES (3)
       ];
@@ -725,6 +764,7 @@ describe("repo-cleanup-worker", () => {
       });
       selectResults = [
         [], // repoPods
+        [], // soft stall detection: running tasks
         [staleTask], // stale tasks
         [{ count: 3 }], // staleRetryCount >= MAX_STALE_RETRIES
       ];
@@ -749,6 +789,8 @@ describe("repo-cleanup-worker", () => {
     it("calls reconcileActiveTaskCounts", async () => {
       selectResults = [
         [], // repoPods
+        [], // soft stall detection: running tasks
+        [], // soft stall detection: running tasks
         [], // stale tasks
       ];
 
@@ -760,6 +802,7 @@ describe("repo-cleanup-worker", () => {
     it("calls cleanupIdleRepoPods", async () => {
       selectResults = [
         [], // repoPods
+        [], // soft stall detection: running tasks
         [], // stale tasks
       ];
 
@@ -771,6 +814,7 @@ describe("repo-cleanup-worker", () => {
     it("handles cleanupExpiredSessions error gracefully", async () => {
       selectResults = [
         [], // repoPods
+        [], // soft stall detection: running tasks
         [], // stale tasks
       ];
 
@@ -783,6 +827,7 @@ describe("repo-cleanup-worker", () => {
     it("calls cleanupExpiredSessions", async () => {
       selectResults = [
         [], // repoPods
+        [], // soft stall detection: running tasks
         [], // stale tasks
       ];
 
@@ -800,6 +845,7 @@ describe("repo-cleanup-worker", () => {
     it("handles empty pod list gracefully", async () => {
       selectResults = [
         [], // repoPods — no pods at all
+        [], // soft stall detection: running tasks
         [], // stale tasks
       ];
 
@@ -813,6 +859,7 @@ describe("repo-cleanup-worker", () => {
 
       selectResults = [
         [provisioningPod, readyPod, noPodName], // repoPods
+        [], // soft stall detection: running tasks
         [], // stale tasks
       ];
 
@@ -834,6 +881,7 @@ describe("repo-cleanup-worker", () => {
       selectResults = [
         [pod],
         [], // active tasks
+        [], // soft stall detection: running tasks
         [], // stale tasks
       ];
 
@@ -861,6 +909,7 @@ describe("repo-cleanup-worker", () => {
             maxRetries: 3,
           },
         ],
+        [], // soft stall detection: running tasks
         [], // stale tasks
       ];
 
@@ -890,6 +939,7 @@ describe("repo-cleanup-worker", () => {
             maxRetries: 3,
           },
         ],
+        [], // soft stall detection: running tasks
         [], // stale tasks
       ];
 
@@ -903,6 +953,97 @@ describe("repo-cleanup-worker", () => {
 
       expect(mockRtExec).toHaveBeenCalledTimes(2);
       expect(mockUpdateWorktree).toHaveBeenCalledWith("task-noretry", "removed");
+    });
+  });
+
+  describe("soft stall detection", () => {
+    it("flags a running task as stalled when silent beyond threshold", async () => {
+      const stalledTask = {
+        id: "task-stalled",
+        repoUrl: "https://github.com/test/repo",
+        workspaceId: null,
+        lastActivityAt: new Date(Date.now() - 400_000), // 6.6 min ago
+        activitySubstate: "active",
+      };
+
+      selectResults = [
+        [], // pods
+        [stalledTask], // running tasks with lastActivityAt (stall detection query)
+        [], // repo config lookup
+        [], // soft stall detection: running tasks
+        [], // stale tasks
+      ];
+
+      mockRtStatus.mockResolvedValue({ state: "running" });
+      mockGetStallThreshold.mockReturnValue(300_000); // 5 min
+
+      await processorFn();
+
+      // Should have updated the task to stalled
+      expect(mockUpdate).toHaveBeenCalled();
+      // Should have published task:stalled event
+      expect(mockPublishEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "task:stalled",
+          taskId: "task-stalled",
+        }),
+      );
+    });
+
+    it("does NOT flag a task that is within threshold", async () => {
+      const activeTask = {
+        id: "task-active",
+        repoUrl: "https://github.com/test/repo",
+        workspaceId: null,
+        lastActivityAt: new Date(Date.now() - 60_000), // 1 min ago
+        activitySubstate: "active",
+      };
+
+      selectResults = [
+        [], // pods
+        [activeTask], // running tasks
+        [], // repo config
+        [], // soft stall detection: running tasks
+        [], // stale tasks
+      ];
+
+      mockRtStatus.mockResolvedValue({ state: "running" });
+      mockGetStallThreshold.mockReturnValue(300_000);
+
+      await processorFn();
+
+      // Should NOT have published stall event
+      expect(mockPublishEvent).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: "task:stalled" }),
+      );
+    });
+
+    it("does NOT re-flag an already stalled task", async () => {
+      const alreadyStalled = {
+        id: "task-already-stalled",
+        repoUrl: "https://github.com/test/repo",
+        workspaceId: null,
+        lastActivityAt: new Date(Date.now() - 600_000), // 10 min ago
+        activitySubstate: "stalled", // already flagged
+      };
+
+      selectResults = [
+        [], // pods
+        [alreadyStalled], // running tasks
+        [], // repo config
+        [], // soft stall detection: running tasks
+        [], // stale tasks
+      ];
+
+      mockRtStatus.mockResolvedValue({ state: "running" });
+      mockGetStallThreshold.mockReturnValue(300_000);
+
+      await processorFn();
+
+      // Should NOT publish duplicate stall event
+      expect(mockPublishEvent).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: "task:stalled" }),
+      );
     });
   });
 });

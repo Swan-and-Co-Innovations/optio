@@ -72,7 +72,9 @@ export async function logStreamWs(app: FastifyInstance) {
           event.type === "task:state_changed" ||
           event.type === "task:message" ||
           event.type === "task:message_delivered" ||
-          event.type === "task:message_acked"
+          event.type === "task:message_acked" ||
+          event.type === "task:stalled" ||
+          event.type === "task:recovered"
         ) {
           socket.send(message);
         }
