@@ -61,6 +61,10 @@ spec:
               value: "http://{{ .Release.Name }}-api:{{ .Values.api.port }}"
             - name: OPTIO_AUTH_DISABLED
               value: {{ .Values.auth.disabled | quote }}
+            {{- if .Values.publicUrl }}
+            - name: PUBLIC_URL
+              value: {{ .Values.publicUrl | quote }}
+            {{- end }}
             {{- if .Values.web.publicApiUrl }}
             - name: PUBLIC_API_URL
               value: {{ .Values.web.publicApiUrl | quote }}
