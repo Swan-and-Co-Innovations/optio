@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { z } from "zod";
 import { getRuntime } from "../services/container-service.js";
 import { getSession } from "../services/interactive-session-service.js";
 import { getSettings } from "../services/optio-settings-service.js";
@@ -51,7 +52,7 @@ export async function sessionChatWs(app: FastifyInstance) {
       return;
     }
 
-    const { sessionId } = req.params as { sessionId: string };
+    const { sessionId } = z.object({ sessionId: z.string() }).parse(req.params);
     const log = logger.child({ sessionId, ws: "session-chat" });
 
     // Extract the user's raw session token for auth passthrough.

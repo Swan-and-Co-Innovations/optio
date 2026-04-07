@@ -11,6 +11,8 @@ import { db } from "../db/client.js";
 import { promptTemplates } from "../db/schema.js";
 import { DEFAULT_PROMPT_TEMPLATE } from "@optio/shared";
 
+const repoUrlQuerySchema = z.object({ repoUrl: z.string().optional() });
+
 const saveTemplateSchema = z.object({
   template: z.string().min(1),
   autoMerge: z.boolean().optional(),
@@ -21,7 +23,7 @@ const saveTemplateSchema = z.object({
 export async function promptTemplateRoutes(app: FastifyInstance) {
   // Get the effective template for a repo (or global default)
   app.get("/api/prompt-templates/effective", async (req, reply) => {
-    const query = req.query as { repoUrl?: string };
+    const query = repoUrlQuerySchema.parse(req.query);
     const result = await getPromptTemplate(query.repoUrl);
     reply.send(result);
   });

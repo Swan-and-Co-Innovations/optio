@@ -14,13 +14,18 @@ export async function slackRoutes(app: FastifyInstance) {
     try {
       // Slack sends interactive payloads as application/x-www-form-urlencoded
       // with a single `payload` field containing JSON
-      const body = req.body as { payload?: string } | string;
+      const body = req.body;
       let payload: any;
 
       if (typeof body === "string") {
         payload = JSON.parse(body);
-      } else if (body?.payload) {
-        payload = JSON.parse(body.payload);
+      } else if (
+        typeof body === "object" &&
+        body !== null &&
+        "payload" in body &&
+        typeof (body as Record<string, unknown>).payload === "string"
+      ) {
+        payload = JSON.parse((body as Record<string, unknown>).payload as string);
       } else {
         payload = body;
       }

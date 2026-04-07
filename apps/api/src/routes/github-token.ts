@@ -1,7 +1,10 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
+import { z } from "zod";
 import { retrieveSecret, storeSecret } from "../services/secret-service.js";
 import { isGitHubAppConfigured } from "../services/github-app-service.js";
 import { isAuthDisabled } from "../services/oauth/index.js";
+
+const rotateTokenSchema = z.object({ token: z.string().min(1) });
 
 /** Rate limit: 10 requests per minute per IP. */
 const RATE_LIMIT = {
@@ -98,10 +101,11 @@ export async function githubTokenRoutes(app: FastifyInstance) {
       preHandler: [requireAdminWhenAuthenticated],
     },
     async (req, reply) => {
-      const { token } = req.body as { token?: string };
-      if (!token || !token.trim()) {
+      const parsed = rotateTokenSchema.safeParse(req.body);
+      if (!parsed.success) {
         return reply.status(400).send({ success: false, error: "Token is required" });
       }
+      const { token } = parsed.data;
 
       // Validate the new token before storing
       try {

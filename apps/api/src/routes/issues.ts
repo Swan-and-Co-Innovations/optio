@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { z } from "zod";
 import { db } from "../db/client.js";
 import { repos, tasks } from "../db/schema.js";
 import { eq, and } from "drizzle-orm";
@@ -6,10 +7,23 @@ import { normalizeRepoUrl, parseRepoUrl } from "@optio/shared";
 import { getGitPlatformForRepo } from "../services/git-token-service.js";
 import { logger } from "../logger.js";
 
+const issuesQuerySchema = z.object({
+  repoId: z.string().optional(),
+  state: z.string().optional(),
+});
+
+const assignIssueSchema = z.object({
+  issueNumber: z.number().int().positive(),
+  repoId: z.string().min(1),
+  title: z.string().min(1),
+  body: z.string(),
+  agentType: z.string().optional(),
+});
+
 export async function issueRoutes(app: FastifyInstance) {
   // List issues from all configured repos (GitHub or GitLab)
   app.get("/api/issues", async (req, reply) => {
-    const query = req.query as { repoId?: string; state?: string };
+    const query = issuesQuerySchema.parse(req.query);
 
     const wsId = req.user?.workspaceId;
     let repoList;
@@ -111,13 +125,11 @@ export async function issueRoutes(app: FastifyInstance) {
 
   // Assign an issue to Optio (add label + create task)
   app.post("/api/issues/assign", async (req, reply) => {
-    const body = req.body as {
-      issueNumber: number;
-      repoId: string;
-      title: string;
-      body: string;
-      agentType?: string;
-    };
+    const parsed = assignIssueSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: parsed.error.issues[0].message });
+    }
+    const body = parsed.data;
 
     const [repo] = await db.select().from(repos).where(eq(repos.id, body.repoId));
     if (!repo) return reply.status(404).send({ error: "Repo not found" });

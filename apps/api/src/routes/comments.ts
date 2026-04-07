@@ -3,6 +3,9 @@ import { z } from "zod";
 import * as commentService from "../services/comment-service.js";
 import * as taskService from "../services/task-service.js";
 
+const idParamsSchema = z.object({ id: z.string() });
+const commentParamsSchema = z.object({ taskId: z.string(), commentId: z.string() });
+
 const createCommentSchema = z.object({
   content: z.string().min(1).max(10000),
 });
@@ -14,7 +17,7 @@ const updateCommentSchema = z.object({
 export async function commentRoutes(app: FastifyInstance) {
   // List comments for a task — verify workspace
   app.get("/api/tasks/:id/comments", async (req, reply) => {
-    const { id } = req.params as { id: string };
+    const { id } = idParamsSchema.parse(req.params);
     const task = await taskService.getTask(id);
     if (!task) return reply.status(404).send({ error: "Task not found" });
     const wsId = req.user?.workspaceId;
@@ -27,7 +30,7 @@ export async function commentRoutes(app: FastifyInstance) {
 
   // Add a comment to a task — verify workspace
   app.post("/api/tasks/:id/comments", async (req, reply) => {
-    const { id } = req.params as { id: string };
+    const { id } = idParamsSchema.parse(req.params);
     const task = await taskService.getTask(id);
     if (!task) return reply.status(404).send({ error: "Task not found" });
     const wsId = req.user?.workspaceId;
@@ -41,7 +44,7 @@ export async function commentRoutes(app: FastifyInstance) {
 
   // Update a comment
   app.patch("/api/tasks/:taskId/comments/:commentId", async (req, reply) => {
-    const { taskId, commentId } = req.params as { taskId: string; commentId: string };
+    const { taskId, commentId } = commentParamsSchema.parse(req.params);
     const task = await taskService.getTask(taskId);
     if (!task) return reply.status(404).send({ error: "Task not found" });
     const wsId = req.user?.workspaceId;
@@ -62,7 +65,7 @@ export async function commentRoutes(app: FastifyInstance) {
 
   // Delete a comment
   app.delete("/api/tasks/:taskId/comments/:commentId", async (req, reply) => {
-    const { taskId, commentId } = req.params as { taskId: string; commentId: string };
+    const { taskId, commentId } = commentParamsSchema.parse(req.params);
     const task = await taskService.getTask(taskId);
     if (!task) return reply.status(404).send({ error: "Task not found" });
     const wsId = req.user?.workspaceId;
@@ -82,7 +85,7 @@ export async function commentRoutes(app: FastifyInstance) {
 
   // Activity feed: interleaved comments + events — verify workspace
   app.get("/api/tasks/:id/activity", async (req, reply) => {
-    const { id } = req.params as { id: string };
+    const { id } = idParamsSchema.parse(req.params);
     const task = await taskService.getTask(id);
     if (!task) return reply.status(404).send({ error: "Task not found" });
     const wsId = req.user?.workspaceId;

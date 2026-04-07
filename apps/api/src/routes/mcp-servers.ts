@@ -2,6 +2,9 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import * as mcpService from "../services/mcp-server-service.js";
 
+const scopeQuerySchema = z.object({ scope: z.string().optional() });
+const idParamsSchema = z.object({ id: z.string() });
+
 const createMcpServerSchema = z.object({
   name: z.string().min(1),
   command: z.string().min(1),
@@ -24,7 +27,7 @@ const updateMcpServerSchema = z.object({
 export async function mcpServerRoutes(app: FastifyInstance) {
   // List MCP servers (global or filtered by scope)
   app.get("/api/mcp-servers", async (req, reply) => {
-    const query = req.query as { scope?: string };
+    const query = scopeQuerySchema.parse(req.query);
     const workspaceId = req.user?.workspaceId ?? null;
     const servers = await mcpService.listMcpServers(query.scope, workspaceId);
     reply.send({ servers });
@@ -32,7 +35,7 @@ export async function mcpServerRoutes(app: FastifyInstance) {
 
   // Get a single MCP server — verify workspace ownership
   app.get("/api/mcp-servers/:id", async (req, reply) => {
-    const { id } = req.params as { id: string };
+    const { id } = idParamsSchema.parse(req.params);
     const server = await mcpService.getMcpServer(id);
     if (!server) return reply.status(404).send({ error: "MCP server not found" });
     const wsId = req.user?.workspaceId;
@@ -52,7 +55,7 @@ export async function mcpServerRoutes(app: FastifyInstance) {
 
   // Update an MCP server — verify workspace ownership
   app.patch("/api/mcp-servers/:id", async (req, reply) => {
-    const { id } = req.params as { id: string };
+    const { id } = idParamsSchema.parse(req.params);
     const existing = await mcpService.getMcpServer(id);
     if (!existing) return reply.status(404).send({ error: "MCP server not found" });
     const wsId = req.user?.workspaceId;
@@ -66,7 +69,7 @@ export async function mcpServerRoutes(app: FastifyInstance) {
 
   // Delete an MCP server — verify workspace ownership
   app.delete("/api/mcp-servers/:id", async (req, reply) => {
-    const { id } = req.params as { id: string };
+    const { id } = idParamsSchema.parse(req.params);
     const existing = await mcpService.getMcpServer(id);
     if (!existing) return reply.status(404).send({ error: "MCP server not found" });
     const wsId = req.user?.workspaceId;
@@ -79,7 +82,7 @@ export async function mcpServerRoutes(app: FastifyInstance) {
 
   // List MCP servers for a specific repo (includes global servers)
   app.get("/api/repos/:id/mcp-servers", async (req, reply) => {
-    const { id } = req.params as { id: string };
+    const { id } = idParamsSchema.parse(req.params);
     const { getRepo } = await import("../services/repo-service.js");
     const repo = await getRepo(id);
     if (!repo) return reply.status(404).send({ error: "Repo not found" });
@@ -90,7 +93,7 @@ export async function mcpServerRoutes(app: FastifyInstance) {
 
   // Create a repo-scoped MCP server
   app.post("/api/repos/:id/mcp-servers", async (req, reply) => {
-    const { id } = req.params as { id: string };
+    const { id } = idParamsSchema.parse(req.params);
     const { getRepo } = await import("../services/repo-service.js");
     const repo = await getRepo(id);
     if (!repo) return reply.status(404).send({ error: "Repo not found" });

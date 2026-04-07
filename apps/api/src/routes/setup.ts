@@ -1,9 +1,16 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
+import { z } from "zod";
 import { checkRuntimeHealth } from "../services/container-service.js";
 import { listSecrets, retrieveSecret } from "../services/secret-service.js";
 import { isSubscriptionAvailable } from "../services/auth-service.js";
 import { isGitHubAppConfigured, getInstallationToken } from "../services/github-app-service.js";
 import { isAuthDisabled } from "../services/oauth/index.js";
+
+const tokenSchema = z.object({ token: z.string().min(1) });
+const gitlabTokenSchema = z.object({ token: z.string().min(1), host: z.string().optional() });
+const keySchema = z.object({ key: z.string().min(1) });
+const reposBodySchema = z.object({ token: z.string().optional() });
+const validateRepoSchema = z.object({ repoUrl: z.string().min(1), token: z.string().optional() });
 
 /** Rate limit config for setup POST endpoints: 5 requests per 15 minutes per IP. */
 const SETUP_POST_RATE_LIMIT = {
@@ -119,8 +126,10 @@ export async function setupRoutes(app: FastifyInstance) {
       preHandler: [requireAdminWhenAuthenticated],
     },
     async (req, reply) => {
-      const { token } = req.body as { token: string };
-      if (!token) return reply.status(400).send({ valid: false, error: "Token is required" });
+      const parsed = tokenSchema.safeParse(req.body);
+      if (!parsed.success)
+        return reply.status(400).send({ valid: false, error: "Token is required" });
+      const { token } = parsed.data;
 
       try {
         const res = await fetch("https://api.github.com/user", {
@@ -146,8 +155,10 @@ export async function setupRoutes(app: FastifyInstance) {
       preHandler: [requireAdminWhenAuthenticated],
     },
     async (req, reply) => {
-      const { token, host } = req.body as { token: string; host?: string };
-      if (!token) return reply.status(400).send({ valid: false, error: "Token is required" });
+      const glParsed = gitlabTokenSchema.safeParse(req.body);
+      if (!glParsed.success)
+        return reply.status(400).send({ valid: false, error: "Token is required" });
+      const { token, host } = glParsed.data;
 
       const gitlabHost = host ?? "gitlab.com";
       try {
@@ -174,8 +185,10 @@ export async function setupRoutes(app: FastifyInstance) {
       preHandler: [requireAdminWhenAuthenticated],
     },
     async (req, reply) => {
-      const { key } = req.body as { key: string };
-      if (!key) return reply.status(400).send({ valid: false, error: "Key is required" });
+      const keyParsed = keySchema.safeParse(req.body);
+      if (!keyParsed.success)
+        return reply.status(400).send({ valid: false, error: "Key is required" });
+      const { key } = keyParsed.data;
 
       try {
         const res = await fetch("https://api.anthropic.com/v1/models", {
@@ -205,8 +218,10 @@ export async function setupRoutes(app: FastifyInstance) {
       preHandler: [requireAdminWhenAuthenticated],
     },
     async (req, reply) => {
-      const { token } = req.body as { token: string };
-      if (!token) return reply.status(400).send({ valid: false, error: "Token is required" });
+      const copilotParsed = tokenSchema.safeParse(req.body);
+      if (!copilotParsed.success)
+        return reply.status(400).send({ valid: false, error: "Token is required" });
+      const { token } = copilotParsed.data;
 
       // Classic PATs (ghp_*) are not supported by Copilot CLI
       if (token.startsWith("ghp_")) {
@@ -241,8 +256,10 @@ export async function setupRoutes(app: FastifyInstance) {
       preHandler: [requireAdminWhenAuthenticated],
     },
     async (req, reply) => {
-      const { key } = req.body as { key: string };
-      if (!key) return reply.status(400).send({ valid: false, error: "Key is required" });
+      const openaiParsed = keySchema.safeParse(req.body);
+      if (!openaiParsed.success)
+        return reply.status(400).send({ valid: false, error: "Key is required" });
+      const { key } = openaiParsed.data;
 
       try {
         const res = await fetch("https://api.openai.com/v1/models", {
@@ -269,7 +286,8 @@ export async function setupRoutes(app: FastifyInstance) {
       preHandler: [requireAdminWhenAuthenticated],
     },
     async (req, reply) => {
-      const { token } = req.body as { token: string };
+      const reposParsed = reposBodySchema.parse(req.body);
+      const token = reposParsed.token;
 
       // Resolve an effective token: user-supplied PAT → GitHub App installation token
       let effectiveToken = token || null;
@@ -339,8 +357,10 @@ export async function setupRoutes(app: FastifyInstance) {
       preHandler: [requireAdminWhenAuthenticated],
     },
     async (req, reply) => {
-      const { token, host } = req.body as { token: string; host?: string };
-      if (!token) return reply.status(400).send({ repos: [], error: "Token is required" });
+      const glReposParsed = gitlabTokenSchema.safeParse(req.body);
+      if (!glReposParsed.success)
+        return reply.status(400).send({ repos: [], error: "Token is required" });
+      const { token, host } = glReposParsed.data;
 
       const gitlabHost = host ?? "gitlab.com";
       try {
@@ -389,8 +409,10 @@ export async function setupRoutes(app: FastifyInstance) {
       preHandler: [requireAdminWhenAuthenticated],
     },
     async (req, reply) => {
-      const { repoUrl, token } = req.body as { repoUrl: string; token?: string };
-      if (!repoUrl) return reply.status(400).send({ valid: false, error: "Repo URL is required" });
+      const repoParsed = validateRepoSchema.safeParse(req.body);
+      if (!repoParsed.success)
+        return reply.status(400).send({ valid: false, error: "Repo URL is required" });
+      const { repoUrl, token } = repoParsed.data;
 
       try {
         // Use the GitHub API to check if the repo exists and is accessible

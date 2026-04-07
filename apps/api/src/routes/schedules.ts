@@ -5,6 +5,9 @@ import * as scheduleService from "../services/schedule-service.js";
 import * as taskService from "../services/task-service.js";
 import { taskQueue } from "../workers/task-worker.js";
 
+const idParamsSchema = z.object({ id: z.string() });
+const limitQuerySchema = z.object({ limit: z.string().optional() });
+
 const taskConfigSchema = z.object({
   title: z.string().min(1),
   prompt: z.string().min(1),
@@ -44,7 +47,7 @@ export async function scheduleRoutes(app: FastifyInstance) {
 
   // Get a single schedule — verify workspace ownership
   app.get("/api/schedules/:id", async (req, reply) => {
-    const { id } = req.params as { id: string };
+    const { id } = idParamsSchema.parse(req.params);
     const schedule = await scheduleService.getSchedule(id);
     if (!schedule) return reply.status(404).send({ error: "Schedule not found" });
     const wsId = req.user?.workspaceId;
@@ -71,7 +74,7 @@ export async function scheduleRoutes(app: FastifyInstance) {
 
   // Update a schedule — verify workspace ownership
   app.patch("/api/schedules/:id", async (req, reply) => {
-    const { id } = req.params as { id: string };
+    const { id } = idParamsSchema.parse(req.params);
     const existing = await scheduleService.getSchedule(id);
     if (!existing) return reply.status(404).send({ error: "Schedule not found" });
     const wsId = req.user?.workspaceId;
@@ -95,7 +98,7 @@ export async function scheduleRoutes(app: FastifyInstance) {
 
   // Delete a schedule — verify workspace ownership
   app.delete("/api/schedules/:id", async (req, reply) => {
-    const { id } = req.params as { id: string };
+    const { id } = idParamsSchema.parse(req.params);
     const existing = await scheduleService.getSchedule(id);
     if (!existing) return reply.status(404).send({ error: "Schedule not found" });
     const wsId = req.user?.workspaceId;
@@ -109,7 +112,7 @@ export async function scheduleRoutes(app: FastifyInstance) {
 
   // Manually trigger a schedule — verify workspace ownership
   app.post("/api/schedules/:id/trigger", async (req, reply) => {
-    const { id } = req.params as { id: string };
+    const { id } = idParamsSchema.parse(req.params);
     const schedule = await scheduleService.getSchedule(id);
     if (!schedule) return reply.status(404).send({ error: "Schedule not found" });
     const wsId = req.user?.workspaceId;
@@ -164,14 +167,14 @@ export async function scheduleRoutes(app: FastifyInstance) {
 
   // Get schedule run history — verify workspace ownership
   app.get("/api/schedules/:id/runs", async (req, reply) => {
-    const { id } = req.params as { id: string };
+    const { id } = idParamsSchema.parse(req.params);
     const schedule = await scheduleService.getSchedule(id);
     if (!schedule) return reply.status(404).send({ error: "Schedule not found" });
     const wsId = req.user?.workspaceId;
     if (wsId && schedule.workspaceId && schedule.workspaceId !== wsId) {
       return reply.status(404).send({ error: "Schedule not found" });
     }
-    const { limit } = (req.query as { limit?: string }) ?? {};
+    const { limit } = limitQuerySchema.parse(req.query);
     const runs = await scheduleService.getScheduleRuns(id, limit ? parseInt(limit, 10) : 50);
     reply.send({ runs });
   });

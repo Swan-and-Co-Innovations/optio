@@ -68,6 +68,8 @@ const updateRepoSchema = z.object({
   dockerInDocker: z.boolean().optional(),
 });
 
+const idParamsSchema = z.object({ id: z.string() });
+
 export async function repoRoutes(app: FastifyInstance) {
   app.get("/api/repos", async (req, reply) => {
     const workspaceId = req.user?.workspaceId ?? null;
@@ -76,7 +78,7 @@ export async function repoRoutes(app: FastifyInstance) {
   });
 
   app.get("/api/repos/:id", async (req, reply) => {
-    const { id } = req.params as { id: string };
+    const { id } = idParamsSchema.parse(req.params);
     const repo = await repoService.getRepo(id);
     if (!repo) return reply.status(404).send({ error: "Repo not found" });
     const wsId = req.user?.workspaceId;
@@ -120,7 +122,7 @@ export async function repoRoutes(app: FastifyInstance) {
   });
 
   app.patch("/api/repos/:id", { preHandler: [requireRole("admin")] }, async (req, reply) => {
-    const { id } = req.params as { id: string };
+    const { id } = idParamsSchema.parse(req.params);
     const existing = await repoService.getRepo(id);
     if (!existing) return reply.status(404).send({ error: "Repo not found" });
     const wsId = req.user?.workspaceId;
@@ -172,7 +174,7 @@ export async function repoRoutes(app: FastifyInstance) {
   });
 
   app.delete("/api/repos/:id", { preHandler: [requireRole("admin")] }, async (req, reply) => {
-    const { id } = req.params as { id: string };
+    const { id } = idParamsSchema.parse(req.params);
     const existing = await repoService.getRepo(id);
     if (!existing) return reply.status(404).send({ error: "Repo not found" });
     const wsId = req.user?.workspaceId;
@@ -185,7 +187,7 @@ export async function repoRoutes(app: FastifyInstance) {
 
   // Auto-detect repo configuration — admin only
   app.post("/api/repos/:id/detect", { preHandler: [requireRole("admin")] }, async (req, reply) => {
-    const { id } = req.params as { id: string };
+    const { id } = idParamsSchema.parse(req.params);
     const repo = await repoService.getRepo(id);
     if (!repo) return reply.status(404).send({ error: "Repo not found" });
     const wsId = req.user?.workspaceId;

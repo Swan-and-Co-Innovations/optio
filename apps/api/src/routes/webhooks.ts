@@ -3,6 +3,9 @@ import { z } from "zod";
 import { isSsrfSafeUrl } from "../utils/ssrf.js";
 import * as webhookService from "../services/webhook-service.js";
 
+const idParamsSchema = z.object({ id: z.string() });
+const limitQuerySchema = z.object({ limit: z.string().optional() });
+
 const createWebhookSchema = z.object({
   url: z.string().url().refine(isSsrfSafeUrl, {
     message: "URL must not target private or internal addresses",
@@ -37,7 +40,7 @@ export async function webhookRoutes(app: FastifyInstance) {
 
   // Get a single webhook — verify workspace ownership
   app.get("/api/webhooks/:id", async (req, reply) => {
-    const { id } = req.params as { id: string };
+    const { id } = idParamsSchema.parse(req.params);
     const webhook = await webhookService.getWebhook(id);
     if (!webhook) return reply.status(404).send({ error: "Webhook not found" });
     const wsId = req.user?.workspaceId;
@@ -59,7 +62,7 @@ export async function webhookRoutes(app: FastifyInstance) {
 
   // Delete a webhook — verify workspace ownership
   app.delete("/api/webhooks/:id", async (req, reply) => {
-    const { id } = req.params as { id: string };
+    const { id } = idParamsSchema.parse(req.params);
     const webhook = await webhookService.getWebhook(id);
     if (!webhook) return reply.status(404).send({ error: "Webhook not found" });
     const wsId = req.user?.workspaceId;
@@ -73,14 +76,14 @@ export async function webhookRoutes(app: FastifyInstance) {
 
   // List deliveries for a webhook — verify workspace ownership
   app.get("/api/webhooks/:id/deliveries", async (req, reply) => {
-    const { id } = req.params as { id: string };
+    const { id } = idParamsSchema.parse(req.params);
     const webhook = await webhookService.getWebhook(id);
     if (!webhook) return reply.status(404).send({ error: "Webhook not found" });
     const wsId = req.user?.workspaceId;
     if (wsId && webhook.workspaceId && webhook.workspaceId !== wsId) {
       return reply.status(404).send({ error: "Webhook not found" });
     }
-    const { limit } = (req.query as { limit?: string }) ?? {};
+    const { limit } = limitQuerySchema.parse(req.query);
     const deliveries = await webhookService.getWebhookDeliveries(id, {
       limit: limit ? parseInt(limit, 10) : 50,
     });

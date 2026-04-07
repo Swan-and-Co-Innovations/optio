@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
+import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { Readable } from "node:stream";
@@ -9,6 +10,14 @@ import * as taskService from "../services/task-service.js";
 import { syncAllTickets } from "../services/ticket-sync-service.js";
 import { storeSecret, deleteSecret } from "../services/secret-service.js";
 import { logger } from "../logger.js";
+
+const createProviderSchema = z.object({
+  source: z.string().min(1),
+  config: z.record(z.unknown()),
+  enabled: z.boolean().optional(),
+});
+
+const idParamsSchema = z.object({ id: z.string() });
 
 /** Fields per provider type that contain credentials and must be encrypted. */
 const SENSITIVE_PROVIDER_FIELDS: Record<string, string[]> = {
@@ -60,7 +69,11 @@ export async function ticketRoutes(app: FastifyInstance) {
 
   // Configure a ticket provider
   app.post("/api/tickets/providers", async (req, reply) => {
-    const body = req.body as { source: string; config: Record<string, unknown>; enabled?: boolean };
+    const parsed = createProviderSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: parsed.error.issues[0].message });
+    }
+    const body = parsed.data;
 
     // Separate sensitive fields from config — they go into encrypted secrets
     const sensitiveFields = SENSITIVE_PROVIDER_FIELDS[body.source] ?? [];
@@ -97,7 +110,7 @@ export async function ticketRoutes(app: FastifyInstance) {
 
   // Delete a ticket provider
   app.delete("/api/tickets/providers/:id", async (req, reply) => {
-    const { id } = req.params as { id: string };
+    const { id } = idParamsSchema.parse(req.params);
     await db.delete(ticketProviders).where(eq(ticketProviders.id, id));
     // Clean up associated encrypted credentials
     await deleteSecret(`ticket-provider:${id}`, "ticket-provider");
@@ -145,19 +158,29 @@ export async function ticketRoutes(app: FastifyInstance) {
       }
 
       const event = req.headers["x-github-event"];
-      const payload = req.body as any;
+      // GitHub webhook payload — already validated by HMAC signature above.
+      // We use a permissive record type since the shape depends on the event.
+      const rawPayload = req.body;
+      const payload = rawPayload as Record<string, Record<string, unknown> | string | undefined>;
 
       if (event === "issues" && payload.action === "labeled") {
-        const label = payload.label?.name;
+        const label = (payload.label as Record<string, unknown> | undefined)?.name;
         if (label === "optio") {
-          logger.info({ issue: payload.issue?.number }, "GitHub issue labeled with optio");
+          logger.info(
+            { issue: (payload.issue as Record<string, unknown> | undefined)?.number },
+            "GitHub issue labeled with optio",
+          );
           // Trigger a sync — handles deduplication
           await syncAllTickets();
         }
       }
 
-      if (event === "pull_request" && payload.action === "closed" && payload.pull_request?.merged) {
-        const prUrl = payload.pull_request.html_url;
+      if (
+        event === "pull_request" &&
+        payload.action === "closed" &&
+        (payload.pull_request as Record<string, unknown> | undefined)?.merged
+      ) {
+        const prUrl = String((payload.pull_request as Record<string, unknown>).html_url ?? "");
         const allTasks = await taskService.listTasks({ limit: 500 });
         const matchingTask = allTasks.find((t: any) => t.prUrl === prUrl);
 
