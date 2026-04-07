@@ -120,6 +120,7 @@ export const tasks = pgTable(
     createdBy: uuid("created_by"), // nullable FK to users (null when auth is disabled)
     ignoreOffPeak: boolean("ignore_off_peak").notNull().default(false),
     workspaceId: uuid("workspace_id"), // nullable for backward compat; new tasks should always set this
+    lastMessageAt: timestamp("last_message_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     startedAt: timestamp("started_at", { withTimezone: true }),
@@ -463,6 +464,32 @@ export const taskComments = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index("task_comments_task_id_idx").on(table.taskId)],
+);
+
+// ── Task Messages (user → agent mid-task messaging) ──────────────────────────
+
+export const taskMessageModeEnum = pgEnum("task_message_mode", ["soft", "interrupt"]);
+
+export const taskMessages = pgTable(
+  "task_messages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    taskId: uuid("task_id")
+      .notNull()
+      .references(() => tasks.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").references(() => users.id),
+    content: text("content").notNull(),
+    mode: taskMessageModeEnum("mode").notNull().default("soft"),
+    workspaceId: uuid("workspace_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    ackedAt: timestamp("acked_at", { withTimezone: true }),
+    deliveryError: text("delivery_error"),
+  },
+  (table) => [
+    index("task_messages_task_id_idx").on(table.taskId),
+    index("task_messages_task_created_idx").on(table.taskId, table.createdAt),
+  ],
 );
 
 export const taskTemplates = pgTable(

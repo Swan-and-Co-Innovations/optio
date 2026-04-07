@@ -511,6 +511,27 @@ export async function forceRedoTask(id: string) {
   return await getTask(id);
 }
 
+/**
+ * Record a task event without a state transition (e.g. user_message, user_interrupt).
+ * Uses the task's current state as both fromState and toState.
+ */
+export async function recordTaskEvent(
+  taskId: string,
+  currentState: string,
+  trigger: string,
+  message?: string,
+  userId?: string,
+) {
+  await db.insert(taskEvents).values({
+    taskId,
+    fromState: currentState as any,
+    toState: currentState as any,
+    trigger,
+    message,
+    userId,
+  });
+}
+
 export async function getTaskEvents(taskId: string) {
   const rows = await db
     .select({

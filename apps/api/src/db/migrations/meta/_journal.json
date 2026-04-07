@@ -309,6 +309,13 @@
       "when": 1776700800000,
       "tag": "0042_opencode_repo_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1776787200000,
+      "tag": "0042_task_messages",
+      "breakpoints": true
     }
   ]
 }

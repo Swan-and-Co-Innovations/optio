@@ -33,6 +33,8 @@ import {
   Plus,
   X,
   Link2,
+  MessageSquare,
+  Zap,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useOptioChatStore } from "@/hooks/use-optio-chat";
@@ -121,6 +123,22 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
     setActionLoading(false);
   };
 
+  const [messageInput, setMessageInput] = useState("");
+  const [messageSending, setMessageSending] = useState(false);
+
+  const handleSendMessage = async (mode: "soft" | "interrupt" = "soft") => {
+    if (!messageInput.trim()) return;
+    setMessageSending(true);
+    try {
+      await api.sendTaskMessage(id, messageInput, mode);
+      setMessageInput("");
+      toast.success(mode === "interrupt" ? "Interrupt sent" : "Message sent");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to send message");
+    }
+    setMessageSending(false);
+  };
+
   const handleResume = async () => {
     if (!resumePrompt.trim()) return;
     setActionLoading(true);
@@ -190,6 +208,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
   const canCancel = ["running", "queued", "provisioning", "needs_attention"].includes(task.state);
   const canRetry = ["failed", "cancelled"].includes(task.state);
   const canResume = ["needs_attention", "failed"].includes(task.state) && !!task.sessionId;
+  const canMessage = task.state === "running" && task.agentType === "claude-code";
   const canForceRestart = ["needs_attention", "failed", "pr_opened"].includes(task.state);
 
   // (log filtering is handled by LogViewer component)
@@ -872,48 +891,82 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
             </ErrorBoundary>
           </div>
 
-          {/* Resume / interact bar */}
+          {/* Message / Resume bar */}
           <div className="shrink-0 border-t border-border bg-bg-card px-4 py-2.5">
-            <div className="flex gap-2 items-center">
-              <input
-                value={resumePrompt}
-                onChange={(e) => setResumePrompt(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleResume()}
-                placeholder={
-                  canResume
-                    ? "Send follow-up instructions to the agent..."
-                    : isActive
-                      ? "Agent is running..."
-                      : "Task has ended"
-                }
-                disabled={!canResume}
-                className="flex-1 px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 disabled:opacity-40 disabled:cursor-not-allowed"
-              />
-              <button
-                onClick={handleResume}
-                disabled={!canResume || !resumePrompt.trim() || actionLoading}
-                title={
-                  !task.sessionId && isTerminal
-                    ? "No session to resume — the agent didn't produce a session ID"
-                    : canResume
-                      ? "Resume the agent with these instructions"
-                      : "Task must be in a resumable state"
-                }
-                className={cn(
-                  "px-3 py-2 rounded-md text-sm font-medium transition-colors disabled:opacity-30 disabled:cursor-not-allowed",
-                  canResume
-                    ? "bg-primary text-white hover:bg-primary-hover"
-                    : "bg-bg-hover text-text-muted",
-                )}
-              >
-                {actionLoading ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Send className="w-4 h-4" />
-                )}
-              </button>
-            </div>
-            {isTerminal && !task.sessionId && (
+            {canMessage ? (
+              /* Mid-task messaging bar (running claude-code tasks) */
+              <div className="flex gap-2 items-center">
+                <input
+                  value={messageInput}
+                  onChange={(e) => setMessageInput(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleSendMessage("soft")}
+                  placeholder="Send a message to the running agent..."
+                  className="flex-1 px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+                />
+                <button
+                  onClick={() => handleSendMessage("soft")}
+                  disabled={!messageInput.trim() || messageSending}
+                  title="Send message (agent picks it up at next turn)"
+                  className="px-3 py-2 rounded-md text-sm font-medium transition-colors bg-primary text-white hover:bg-primary-hover disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  {messageSending ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Send className="w-4 h-4" />
+                  )}
+                </button>
+                <button
+                  onClick={() => handleSendMessage("interrupt")}
+                  disabled={!messageInput.trim() || messageSending}
+                  title="Interrupt — urgent message with high priority"
+                  className="px-3 py-2 rounded-md text-sm font-medium transition-colors bg-warning text-white hover:bg-warning/90 disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <Zap className="w-4 h-4" />
+                </button>
+              </div>
+            ) : (
+              /* Resume bar (for non-running or resumable tasks) */
+              <div className="flex gap-2 items-center">
+                <input
+                  value={resumePrompt}
+                  onChange={(e) => setResumePrompt(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleResume()}
+                  placeholder={
+                    canResume
+                      ? "Send follow-up instructions to the agent..."
+                      : isActive
+                        ? "Agent is running..."
+                        : "Task has ended"
+                  }
+                  disabled={!canResume}
+                  className="flex-1 px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 disabled:opacity-40 disabled:cursor-not-allowed"
+                />
+                <button
+                  onClick={handleResume}
+                  disabled={!canResume || !resumePrompt.trim() || actionLoading}
+                  title={
+                    !task.sessionId && isTerminal
+                      ? "No session to resume — the agent didn't produce a session ID"
+                      : canResume
+                        ? "Resume the agent with these instructions"
+                        : "Task must be in a resumable state"
+                  }
+                  className={cn(
+                    "px-3 py-2 rounded-md text-sm font-medium transition-colors disabled:opacity-30 disabled:cursor-not-allowed",
+                    canResume
+                      ? "bg-primary text-white hover:bg-primary-hover"
+                      : "bg-bg-hover text-text-muted",
+                  )}
+                >
+                  {actionLoading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Send className="w-4 h-4" />
+                  )}
+                </button>
+              </div>
+            )}
+            {isTerminal && !task.sessionId && !canMessage && (
               <p className="text-[10px] text-text-muted/50 mt-1">
                 Resume unavailable — no session was captured for this task.
               </p>

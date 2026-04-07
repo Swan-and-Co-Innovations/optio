@@ -67,7 +67,13 @@ export async function logStreamWs(app: FastifyInstance) {
     subscriber.on("message", (_ch: string, message: string) => {
       try {
         const event = JSON.parse(message);
-        if (event.type === "task:log" || event.type === "task:state_changed") {
+        if (
+          event.type === "task:log" ||
+          event.type === "task:state_changed" ||
+          event.type === "task:message" ||
+          event.type === "task:message_delivered" ||
+          event.type === "task:message_acked"
+        ) {
           socket.send(message);
         }
       } catch {

@@ -4,15 +4,15 @@ import { useState, useEffect, useCallback } from "react";
 import { api } from "@/lib/api-client";
 import { StateBadge } from "./state-badge";
 import { cn, formatRelativeTime } from "@/lib/utils";
-import { MessageSquare, Send, Loader2, Pencil, Trash2, X, Check } from "lucide-react";
+import { MessageSquare, Send, Loader2, Pencil, Trash2, X, Check, Zap } from "lucide-react";
 import { toast } from "sonner";
 
 interface ActivityItem {
-  type: "comment" | "event";
+  type: "comment" | "event" | "message";
   id: string;
   taskId: string;
   createdAt: string;
-  // Comment fields
+  // Comment / message fields
   content?: string;
   user?: { id: string; displayName: string; avatarUrl?: string | null };
   // Event fields
@@ -21,6 +21,10 @@ interface ActivityItem {
   trigger?: string;
   message?: string;
   userId?: string;
+  // Message fields
+  mode?: "soft" | "interrupt";
+  deliveredAt?: string | null;
+  ackedAt?: string | null;
 }
 
 const STATE_DOT_COLORS: Record<string, string> = {
@@ -144,6 +148,62 @@ export function ActivityFeed({ taskId }: { taskId: string }) {
                 </div>
                 <div className="text-[11px] text-text-muted/40 mt-0.5 tabular-nums">
                   {formatRelativeTime(item.createdAt)}
+                </div>
+              </div>
+            </div>
+          );
+        }
+
+        // Message item (user → agent)
+        if (item.type === "message") {
+          const isInterrupt = item.mode === "interrupt";
+          const status = item.ackedAt ? "acked" : item.deliveredAt ? "delivered" : "sending";
+          return (
+            <div key={`message-${item.id}`} className="flex items-start gap-3">
+              <div className="flex flex-col items-center">
+                <div
+                  className={cn(
+                    "w-2 h-2 rounded-full mt-2 shrink-0",
+                    isInterrupt ? "bg-warning" : "bg-primary",
+                  )}
+                />
+                {!isLast && <div className="w-px flex-1 mt-1 bg-border/60" />}
+              </div>
+              <div className="min-w-0 flex-1 pb-4">
+                <div className="rounded-md border border-border bg-primary/5 p-2.5">
+                  <div className="flex items-center justify-between gap-2 mb-1.5">
+                    <div className="flex items-center gap-1.5">
+                      {isInterrupt ? (
+                        <Zap className="w-3 h-3 text-warning" />
+                      ) : (
+                        <Send className="w-3 h-3 text-primary" />
+                      )}
+                      <span className="text-xs font-medium text-text">
+                        {item.user?.displayName ?? "User"}{" "}
+                        <span className="text-text-muted/60 font-normal">
+                          {isInterrupt ? "interrupted" : "messaged"} the agent
+                        </span>
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className={cn(
+                          "text-[10px] tabular-nums",
+                          status === "acked"
+                            ? "text-success"
+                            : status === "delivered"
+                              ? "text-primary"
+                              : "text-text-muted/40",
+                        )}
+                      >
+                        {status}
+                      </span>
+                      <span className="text-[11px] text-text-muted/40 tabular-nums">
+                        {formatRelativeTime(item.createdAt)}
+                      </span>
+                    </div>
+                  </div>
+                  <p className="text-xs text-text/80 whitespace-pre-wrap">{item.content}</p>
                 </div>
               </div>
             </div>

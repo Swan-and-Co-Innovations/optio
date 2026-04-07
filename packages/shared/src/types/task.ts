@@ -59,6 +59,26 @@ export interface TaskComment {
   };
 }
 
+export type TaskMessageMode = "soft" | "interrupt";
+
+export interface TaskMessage {
+  id: string;
+  taskId: string;
+  userId?: string;
+  content: string;
+  mode: TaskMessageMode;
+  workspaceId?: string;
+  createdAt: Date;
+  deliveredAt?: Date | null;
+  ackedAt?: Date | null;
+  deliveryError?: string | null;
+  user?: {
+    id: string;
+    displayName: string;
+    avatarUrl?: string;
+  };
+}
+
 export interface CreateTaskInput {
   title: string;
   prompt: string;

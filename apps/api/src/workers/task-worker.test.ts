@@ -105,6 +105,25 @@ describe("buildAgentCommand", () => {
       const cmds = buildAgentCommand("claude-code", env);
       expect(cmds.some((c) => c.includes("--model"))).toBe(false);
     });
+
+    it("includes --input-format stream-json for mid-task messaging support", () => {
+      const env = { OPTIO_PROMPT: "Fix the bug" };
+      const cmds = buildAgentCommand("claude-code", env);
+      expect(cmds.some((c) => c.includes("--input-format stream-json"))).toBe(true);
+    });
+
+    it("includes --replay-user-messages for message acknowledgment", () => {
+      const env = { OPTIO_PROMPT: "Fix the bug" };
+      const cmds = buildAgentCommand("claude-code", env);
+      expect(cmds.some((c) => c.includes("--replay-user-messages"))).toBe(true);
+    });
+
+    it("does not include stream-json flags for codex agent", () => {
+      const env = { OPTIO_PROMPT: "Build feature" };
+      const cmds = buildAgentCommand("codex", env);
+      expect(cmds.some((c) => c.includes("--input-format stream-json"))).toBe(false);
+      expect(cmds.some((c) => c.includes("--replay-user-messages"))).toBe(false);
+    });
   });
 
   describe("codex agent", () => {

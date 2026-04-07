@@ -9,7 +9,9 @@ export type WsEvent =
   | AuthFailedEvent
   | SessionCreatedEvent
   | SessionEndedEvent
-  | TaskCommentEvent;
+  | TaskCommentEvent
+  | TaskMessageEvent
+  | TaskMessageDeliveredEvent;
 
 export interface TaskStateChangedEvent {
   type: "task:state_changed";
@@ -71,5 +73,23 @@ export interface TaskCommentEvent {
   type: "task:comment";
   taskId: string;
   commentId: string;
+  timestamp: string;
+}
+
+export interface TaskMessageEvent {
+  type: "task:message";
+  taskId: string;
+  messageId: string;
+  userId: string | null;
+  userDisplayName: string | null;
+  content: string;
+  mode: "soft" | "interrupt";
+  createdAt: string;
+}
+
+export interface TaskMessageDeliveredEvent {
+  type: "task:message_delivered" | "task:message_acked";
+  taskId: string;
+  messageId: string;
   timestamp: string;
 }

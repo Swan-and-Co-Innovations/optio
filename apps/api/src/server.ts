@@ -25,6 +25,7 @@ import { webhookRoutes } from "./routes/webhooks.js";
 import { sessionRoutes } from "./routes/sessions.js";
 import { scheduleRoutes } from "./routes/schedules.js";
 import { commentRoutes } from "./routes/comments.js";
+import { messageRoutes } from "./routes/messages.js";
 import { slackRoutes } from "./routes/slack.js";
 import { taskTemplateRoutes } from "./routes/task-templates.js";
 import { workspaceRoutes } from "./routes/workspaces.js";
@@ -110,6 +111,7 @@ export async function buildServer() {
   await app.register(sessionRoutes);
   await app.register(scheduleRoutes);
   await app.register(commentRoutes);
+  await app.register(messageRoutes);
   await app.register(slackRoutes);
   await app.register(taskTemplateRoutes);
   await app.register(workspaceRoutes);

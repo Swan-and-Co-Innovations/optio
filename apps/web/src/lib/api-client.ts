@@ -157,6 +157,15 @@ export const api = {
 
   getTaskActivity: (id: string) => request<{ activity: any[] }>(`/api/tasks/${id}/activity`),
 
+  // Task Messages (mid-task user → agent messaging)
+  sendTaskMessage: (id: string, content: string, mode: "soft" | "interrupt" = "soft") =>
+    request<{ message: any }>(`/api/tasks/${id}/message`, {
+      method: "POST",
+      body: JSON.stringify({ content, mode }),
+    }),
+
+  getTaskMessages: (id: string) => request<{ messages: any[] }>(`/api/tasks/${id}/messages`),
+
   // Secrets
   listSecrets: (scope?: string) => {
     const qs = scope ? `?scope=${scope}` : "";

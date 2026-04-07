@@ -29,6 +29,8 @@ import { resolveSecretsForTask, retrieveSecretWithFallback } from "../services/s
 import { getPromptTemplate } from "../services/prompt-template-service.js";
 import { isGitHubAppConfigured } from "../services/github-app-service.js";
 import { getCredentialSecret } from "../services/credential-secret-service.js";
+import { subscribeToTaskMessages } from "../services/task-message-bus.js";
+import * as messageService from "../services/task-message-service.js";
 import { logger } from "../logger.js";
 
 import { getBullMQConnectionOptions } from "../services/redis-config.js";
@@ -540,6 +542,47 @@ export function startTaskWorker() {
         // Buffer for partial NDJSON lines split across chunks
         let lineBuf = "";
 
+        // Subscribe to mid-task messages from users (only for claude-code)
+        let messageSubscription: { unsubscribe: () => void } | undefined;
+        if (task.agentType === "claude-code") {
+          messageSubscription = subscribeToTaskMessages(taskId, async (payload) => {
+            try {
+              // Format the message text — prefix with interrupt marker if needed
+              let text = payload.content;
+              if (payload.mode === "interrupt") {
+                text = `[URGENT INTERRUPT FROM USER — stop what you are doing and address this immediately] ${text}`;
+              }
+
+              // Write stream-json NDJSON line to stdin
+              const streamJsonMsg = JSON.stringify({
+                type: "user",
+                message: {
+                  role: "user",
+                  content: [{ type: "text", text }],
+                },
+              });
+              execSession.stdin.write(streamJsonMsg + "\n");
+
+              // Mark as delivered
+              await messageService.markDelivered(payload.messageId);
+              await publishEvent({
+                type: "task:message_delivered",
+                taskId,
+                messageId: payload.messageId,
+                timestamp: new Date().toISOString(),
+              });
+            } catch (err) {
+              log.warn({ messageId: payload.messageId, err }, "Failed to deliver task message");
+              await messageService
+                .markDeliveryError(
+                  payload.messageId,
+                  err instanceof Error ? err.message : "delivery failed",
+                )
+                .catch(() => {});
+            }
+          });
+        }
+
         // Capture stderr for diagnostics (e.g. bash parse errors, git warnings)
         let stderrData = "";
         (async () => {
@@ -654,6 +697,9 @@ export function startTaskWorker() {
             );
           }
         }
+
+        // Exec finished — clean up message subscription
+        messageSubscription?.unsubscribe();
 
         // Exec finished — determine result
         if (stderrData) {
@@ -1135,7 +1181,9 @@ export function buildAgentCommand(
         `echo "[optio] Running Claude Code${opts?.isReview ? " (review)" : ""}..."`,
         `claude -p "$OPTIO_PROMPT" \\`,
         `  --dangerously-skip-permissions \\`,
+        `  --input-format stream-json \\`,
         `  --output-format stream-json \\`,
+        `  --replay-user-messages \\`,
         `  --verbose \\`,
         `  --max-turns ${maxTurns} \\`,
         `  ${modelFlag} ${resumeFlag}`.trim(),
