@@ -3,6 +3,7 @@ import {
   TicketSource,
   DEFAULT_TICKET_LABEL,
   DEFAULT_MAX_TICKET_PAGES,
+  assertSsrfSafe,
   type Ticket,
   type TicketComment,
   type TicketProviderConfig,
@@ -59,6 +60,7 @@ export class JiraTicketProvider implements TicketProvider {
 
   async fetchActionableTickets(config: TicketProviderConfig): Promise<Ticket[]> {
     const jiraConfig = asJiraConfig(config);
+    await assertSsrfSafe(jiraConfig.baseUrl);
     const client = new Version3Client({
       host: jiraConfig.baseUrl,
       authentication: {
@@ -160,6 +162,7 @@ export class JiraTicketProvider implements TicketProvider {
     config: TicketProviderConfig,
   ): Promise<TicketComment[]> {
     const jiraConfig = asJiraConfig(config);
+    await assertSsrfSafe(jiraConfig.baseUrl);
     const client = new Version3Client({
       host: jiraConfig.baseUrl,
       authentication: {
@@ -185,6 +188,7 @@ export class JiraTicketProvider implements TicketProvider {
 
   async addComment(ticketId: string, comment: string, config: TicketProviderConfig): Promise<void> {
     const jiraConfig = asJiraConfig(config);
+    await assertSsrfSafe(jiraConfig.baseUrl);
     const client = new Version3Client({
       host: jiraConfig.baseUrl,
       authentication: {
@@ -221,6 +225,7 @@ export class JiraTicketProvider implements TicketProvider {
     config: TicketProviderConfig,
   ): Promise<void> {
     const jiraConfig = asJiraConfig(config);
+    await assertSsrfSafe(jiraConfig.baseUrl);
     const client = new Version3Client({
       host: jiraConfig.baseUrl,
       authentication: {
