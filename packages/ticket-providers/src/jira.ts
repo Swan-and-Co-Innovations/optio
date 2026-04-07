@@ -3,11 +3,11 @@ import {
   TicketSource,
   DEFAULT_TICKET_LABEL,
   DEFAULT_MAX_TICKET_PAGES,
-  assertSsrfSafe,
   type Ticket,
   type TicketComment,
   type TicketProviderConfig,
 } from "@optio/shared";
+import { assertSsrfSafe } from "@optio/shared/ssrf";
 import type { TicketProvider } from "./types.js";
 
 /**

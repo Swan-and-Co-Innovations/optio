@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { JiraTicketProvider } from "./jira.js";
 import type { JiraProviderConfig } from "./jira.js";
 
-vi.mock("@optio/shared", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@optio/shared")>();
+vi.mock("@optio/shared/ssrf", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@optio/shared/ssrf")>();
   return {
     ...actual,
     assertSsrfSafe: vi.fn(),
@@ -28,7 +28,7 @@ vi.mock("jira.js", () => {
   };
 });
 
-import { assertSsrfSafe, SsrfError } from "@optio/shared";
+import { assertSsrfSafe, SsrfError } from "@optio/shared/ssrf";
 
 const mockAssertSsrfSafe = assertSsrfSafe as ReturnType<typeof vi.fn>;
 

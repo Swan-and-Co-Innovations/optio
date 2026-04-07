@@ -2,15 +2,15 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { GitLabTicketProvider } from "./gitlab.js";
 import type { GitLabProviderConfig } from "./gitlab.js";
 
-vi.mock("@optio/shared", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@optio/shared")>();
+vi.mock("@optio/shared/ssrf", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@optio/shared/ssrf")>();
   return {
     ...actual,
     assertSsrfSafe: vi.fn(),
   };
 });
 
-import { assertSsrfSafe, SsrfError } from "@optio/shared";
+import { assertSsrfSafe, SsrfError } from "@optio/shared/ssrf";
 
 const mockAssertSsrfSafe = assertSsrfSafe as ReturnType<typeof vi.fn>;
 
