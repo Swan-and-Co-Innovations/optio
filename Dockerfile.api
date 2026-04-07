@@ -8,15 +8,17 @@ WORKDIR /app
 # Copy workspace config
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json tsconfig.base.json ./
 
-# Copy package.json and tsconfig for all workspace packages
+# Copy package.json for ALL workspace packages (pnpm needs full workspace graph)
 COPY apps/api/package.json apps/api/tsconfig.json apps/api/drizzle.config.ts apps/api/
+COPY apps/web/package.json apps/web/
+COPY apps/site/package.json apps/site/
 COPY packages/shared/package.json packages/shared/tsconfig.json packages/shared/
 COPY packages/container-runtime/package.json packages/container-runtime/tsconfig.json packages/container-runtime/
 COPY packages/agent-adapters/package.json packages/agent-adapters/tsconfig.json packages/agent-adapters/
 COPY packages/ticket-providers/package.json packages/ticket-providers/tsconfig.json packages/ticket-providers/
 
-# Install production dependencies only (--ignore-scripts avoids husky prepare hook)
-RUN pnpm install --frozen-lockfile --prod --ignore-scripts
+# Install production dependencies (--ignore-scripts avoids husky prepare hook)
+RUN pnpm install --frozen-lockfile --ignore-scripts
 
 # ---- Runtime stage ----
 FROM node:22-slim@sha256:80fdb3f57c815e1b638d221f30a826823467c4a56c8f6a8d7aa091cd9b1675ea
