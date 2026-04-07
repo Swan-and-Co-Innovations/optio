@@ -1,0 +1,49 @@
+{
+  "_comment": "ACA Container App definition for Optio Web. External ingress, receives API_URL pointing to the Optio API internal FQDN. Parameterised values use __PLACEHOLDER__ syntax — replaced by scripts/deploy-optio-apps.sh before calling az containerapp create --yaml.",
+  "location": "eastus",
+  "identity": {
+    "type": "UserAssigned",
+    "userAssignedIdentities": {
+      "/subscriptions/__SUBSCRIPTION_ID__/resourceGroups/rg-avd-dev-eastus/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-ppf-aca-dev-eastus": {}
+    }
+  },
+  "properties": {
+    "managedEnvironmentId": "/subscriptions/__SUBSCRIPTION_ID__/resourceGroups/rg-avd-dev-eastus/providers/Microsoft.App/managedEnvironments/cae-dev-eastus",
+    "configuration": {
+      "activeRevisionsMode": "Single",
+      "ingress": {
+        "external": true,
+        "targetPort": 3000,
+        "transport": "auto",
+        "allowInsecure": false
+      },
+      "registries": [
+        {
+          "server": "acrdevd2thdvq46mgnw.azurecr.io",
+          "identity": "/subscriptions/__SUBSCRIPTION_ID__/resourceGroups/rg-avd-dev-eastus/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-ppf-aca-dev-eastus"
+        }
+      ]
+    },
+    "template": {
+      "containers": [
+        {
+          "name": "optio-web",
+          "image": "acrdevd2thdvq46mgnw.azurecr.io/optio-web:latest",
+          "resources": {
+            "cpu": 0.25,
+            "memory": "0.5Gi"
+          },
+          "env": [
+            { "name": "API_URL",  "value": "__OPTIO_API_FQDN__" },
+            { "name": "PORT",     "value": "3000" },
+            { "name": "NODE_ENV", "value": "production" }
+          ]
+        }
+      ],
+      "scale": {
+        "minReplicas": 1,
+        "maxReplicas": 5
+      }
+    }
+  }
+}

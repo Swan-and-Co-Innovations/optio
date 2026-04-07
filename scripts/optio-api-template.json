@@ -1,0 +1,74 @@
+{
+  "_comment": "ACA Container App definition for Optio API. Internal ingress, KV-referenced secrets via managed identity. Parameterised values use __PLACEHOLDER__ syntax — replaced by scripts/deploy-optio-apps.sh before calling az containerapp create --yaml.",
+  "location": "eastus",
+  "identity": {
+    "type": "UserAssigned",
+    "userAssignedIdentities": {
+      "/subscriptions/__SUBSCRIPTION_ID__/resourceGroups/rg-avd-dev-eastus/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-ppf-aca-dev-eastus": {}
+    }
+  },
+  "properties": {
+    "managedEnvironmentId": "/subscriptions/__SUBSCRIPTION_ID__/resourceGroups/rg-avd-dev-eastus/providers/Microsoft.App/managedEnvironments/cae-dev-eastus",
+    "configuration": {
+      "activeRevisionsMode": "Single",
+      "ingress": {
+        "external": false,
+        "targetPort": 3000,
+        "transport": "auto",
+        "allowInsecure": false
+      },
+      "registries": [
+        {
+          "server": "acrdevd2thdvq46mgnw.azurecr.io",
+          "identity": "/subscriptions/__SUBSCRIPTION_ID__/resourceGroups/rg-avd-dev-eastus/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-ppf-aca-dev-eastus"
+        }
+      ],
+      "secrets": [
+        {
+          "name": "database-url",
+          "keyVaultUrl": "https://kv-ppf-dev-eastus.vault.azure.net/secrets/optio-db-url",
+          "identity": "/subscriptions/__SUBSCRIPTION_ID__/resourceGroups/rg-avd-dev-eastus/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-ppf-aca-dev-eastus"
+        },
+        {
+          "name": "redis-url",
+          "keyVaultUrl": "https://kv-ppf-dev-eastus.vault.azure.net/secrets/optio-redis-url",
+          "identity": "/subscriptions/__SUBSCRIPTION_ID__/resourceGroups/rg-avd-dev-eastus/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-ppf-aca-dev-eastus"
+        },
+        {
+          "name": "github-token",
+          "keyVaultUrl": "https://kv-ppf-dev-eastus.vault.azure.net/secrets/GITHUB-TOKEN",
+          "identity": "/subscriptions/__SUBSCRIPTION_ID__/resourceGroups/rg-avd-dev-eastus/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-ppf-aca-dev-eastus"
+        },
+        {
+          "name": "anthropic-api-key",
+          "keyVaultUrl": "https://kv-ppf-dev-eastus.vault.azure.net/secrets/anthropic-api-key",
+          "identity": "/subscriptions/__SUBSCRIPTION_ID__/resourceGroups/rg-avd-dev-eastus/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-ppf-aca-dev-eastus"
+        }
+      ]
+    },
+    "template": {
+      "containers": [
+        {
+          "name": "optio-api",
+          "image": "acrdevd2thdvq46mgnw.azurecr.io/optio-api:latest",
+          "resources": {
+            "cpu": 0.5,
+            "memory": "1Gi"
+          },
+          "env": [
+            { "name": "DATABASE_URL",     "secretRef": "database-url" },
+            { "name": "REDIS_URL",        "secretRef": "redis-url" },
+            { "name": "GITHUB_TOKEN",     "secretRef": "github-token" },
+            { "name": "ANTHROPIC_API_KEY","secretRef": "anthropic-api-key" },
+            { "name": "PORT",             "value": "3000" },
+            { "name": "NODE_ENV",         "value": "production" }
+          ]
+        }
+      ],
+      "scale": {
+        "minReplicas": 1,
+        "maxReplicas": 10
+      }
+    }
+  }
+}

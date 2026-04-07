@@ -1,0 +1,5 @@
+version: v1.1.0
+steps:
+  - cmd: acrdevd2thdvq46mgnw.azurecr.io/gsd-agent:m001 code-review-graph --version
+    disableWorkingDirectoryOverride: true
+    timeout: 60

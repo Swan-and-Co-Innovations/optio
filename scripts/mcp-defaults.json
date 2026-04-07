@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "code-review-graph": {
+      "type": "stdio",
+      "command": "code-review-graph",
+      "args": ["serve"],
+      "description": "Code review graph MCP server — provides semantic code analysis and review tools via stdio transport"
+    }
+  }
+}
