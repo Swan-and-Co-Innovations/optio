@@ -1,0 +1,58 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "_comment": "ACA Job definition template for Optio agent jobs. Parameterised values are replaced by the test/deployment script at creation time.",
+  "jobName": "optio-agent-job",
+  "location": "eastus",
+  "environmentId": "/subscriptions/__SUBSCRIPTION_ID__/resourceGroups/rg-avd-dev-eastus/providers/Microsoft.App/managedEnvironments/cae-dev-eastus",
+  "configuration": {
+    "triggerType": "Manual",
+    "replicaTimeout": 300,
+    "replicaRetryLimit": 0,
+    "manualTriggerConfig": {
+      "parallelism": 1,
+      "replicaCompletionCount": 1
+    },
+    "registries": [
+      {
+        "server": "acrdevd2thdvq46mgnw.azurecr.io",
+        "identity": "/subscriptions/__SUBSCRIPTION_ID__/resourceGroups/rg-avd-dev-eastus/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-ppf-aca-dev-eastus"
+      }
+    ],
+    "secrets": [
+      {
+        "name": "anthropic-api-key",
+        "keyVaultUrl": "https://kv-ppf-dev-eastus.vault.azure.net/secrets/anthropic-api-key",
+        "identity": "/subscriptions/__SUBSCRIPTION_ID__/resourceGroups/rg-avd-dev-eastus/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-ppf-aca-dev-eastus"
+      },
+      {
+        "name": "github-token",
+        "keyVaultUrl": "https://kv-ppf-dev-eastus.vault.azure.net/secrets/GITHUB-TOKEN",
+        "identity": "/subscriptions/__SUBSCRIPTION_ID__/resourceGroups/rg-avd-dev-eastus/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-ppf-aca-dev-eastus"
+      }
+    ]
+  },
+  "template": {
+    "containers": [
+      {
+        "name": "agent",
+        "image": "acrdevd2thdvq46mgnw.azurecr.io/gsd-agent:m001",
+        "resources": {
+          "cpu": 0.5,
+          "memory": "1Gi"
+        },
+        "env": [
+          { "name": "ANTHROPIC_API_KEY", "secretRef": "anthropic-api-key" },
+          { "name": "GITHUB_TOKEN",      "secretRef": "github-token" },
+          { "name": "REPO_URL",          "value": "__REPO_URL__" },
+          { "name": "REPO_BRANCH",       "value": "__REPO_BRANCH__" }
+        ]
+      }
+    ]
+  },
+  "identity": {
+    "type": "UserAssigned",
+    "userAssignedIdentities": {
+      "/subscriptions/__SUBSCRIPTION_ID__/resourceGroups/rg-avd-dev-eastus/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-ppf-aca-dev-eastus": {}
+    }
+  }
+}

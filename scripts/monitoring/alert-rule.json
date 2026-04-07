@@ -1,0 +1,63 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "_comment": "Azure Monitor alert template for Optio ACA job failures. Parameterised values (__SUBSCRIPTION_ID__, __RESOURCE_GROUP__, __ALERT_EMAIL__) are substituted by deploy-monitoring.sh at deploy time.",
+  "resources": [
+    {
+      "type": "microsoft.insights/actionGroups",
+      "apiVersion": "2023-01-01",
+      "name": "ag-optio-alerts",
+      "location": "Global",
+      "properties": {
+        "groupShortName": "optio-alrt",
+        "enabled": true,
+        "emailReceivers": [
+          {
+            "name": "alert-recipient",
+            "emailAddress": "__ALERT_EMAIL__",
+            "useCommonAlertSchema": true
+          }
+        ]
+      }
+    },
+    {
+      "type": "microsoft.insights/metricAlerts",
+      "apiVersion": "2018-03-01",
+      "name": "alert-optio-job-failure",
+      "location": "Global",
+      "dependsOn": [
+        "[resourceId('microsoft.insights/actionGroups', 'ag-optio-alerts')]"
+      ],
+      "properties": {
+        "description": "Fires when optio-agent-job execution(s) fail in rg-avd-dev-eastus",
+        "severity": 2,
+        "enabled": true,
+        "scopes": [
+          "/subscriptions/__SUBSCRIPTION_ID__/resourceGroups/__RESOURCE_GROUP__/providers/Microsoft.App/jobs/optio-agent-job"
+        ],
+        "evaluationFrequency": "PT1M",
+        "windowSize": "PT5M",
+        "criteria": {
+          "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
+          "allOf": [
+            {
+              "name": "FailedJobExecutions",
+              "criterionType": "StaticThresholdCriterion",
+              "metricNamespace": "microsoft.app/jobs",
+              "metricName": "JobExecutionFailedCount",
+              "operator": "GreaterThanOrEqual",
+              "threshold": 1,
+              "timeAggregation": "Count"
+            }
+          ]
+        },
+        "actions": [
+          {
+            "actionGroupId": "/subscriptions/__SUBSCRIPTION_ID__/resourceGroups/__RESOURCE_GROUP__/providers/microsoft.insights/actionGroups/ag-optio-alerts"
+          }
+        ],
+        "autoMitigate": false
+      }
+    }
+  ]
+}

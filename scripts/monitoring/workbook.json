@@ -1,0 +1,125 @@
+{
+  "_comment": "App Insights workbook template for Optio agent job monitoring. Placeholder __APP_INSIGHTS_ID__ is substituted by deploy-monitoring.sh at deploy time.",
+  "version": "Notebook/1.0",
+  "items": [
+    {
+      "type": 9,
+      "content": {
+        "version": "KqlParameterItem/1.0",
+        "parameters": [
+          {
+            "id": "timeRange",
+            "version": "KqlParameterItem/1.0",
+            "name": "TimeRange",
+            "label": "Time Range",
+            "type": 4,
+            "value": {
+              "durationMs": 604800000
+            },
+            "typeSettings": {
+              "selectableValues": [
+                { "durationMs": 3600000 },
+                { "durationMs": 86400000 },
+                { "durationMs": 604800000 },
+                { "durationMs": 2592000000 }
+              ],
+              "allowCustom": true
+            },
+            "resourceType": "microsoft.insights/components"
+          }
+        ],
+        "style": "above",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components"
+      },
+      "name": "parameters"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "## Optio Agent Job — Task Execution Monitoring\n\nThis workbook shows task execution counts (succeeded vs. failed) and estimated compute cost for `optio-agent-job` running on Azure Container Apps."
+      },
+      "name": "header-text"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "ContainerAppSystemLogs_CL\n| where TimeGenerated {TimeRange}\n| where ContainerAppName_s == 'optio-agent-job' or ContainerGroupName_s contains 'optio-agent-job'\n| extend EventType = case(\n    Reason_s == 'Succeeded' or Log_s contains 'Succeeded', 'Succeeded',\n    Reason_s == 'Failed' or Log_s contains 'Failed' or Log_s contains 'Error', 'Failed',\n    'Other'\n  )\n| where EventType in ('Succeeded', 'Failed')\n| summarize Count = count() by bin(TimeGenerated, 1h), EventType\n| order by TimeGenerated asc",
+        "size": 0,
+        "title": "Panel 1: Task Execution Count Over Time (Succeeded vs Failed)",
+        "timeContext": {
+          "durationMs": 604800000
+        },
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "crossComponentResources": ["__APP_INSIGHTS_ID__"],
+        "visualization": "timechart",
+        "chartSettings": {
+          "seriesLabelSettings": [
+            {
+              "seriesName": "Succeeded",
+              "color": "green"
+            },
+            {
+              "seriesName": "Failed",
+              "color": "redBright"
+            }
+          ]
+        }
+      },
+      "name": "task-count-panel"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "ContainerAppSystemLogs_CL\n| where TimeGenerated {TimeRange}\n| where ContainerAppName_s == 'optio-agent-job' or ContainerGroupName_s contains 'optio-agent-job'\n| where Reason_s == 'Succeeded' or Log_s contains 'Succeeded'\n| extend\n    CPUSeconds = todouble(coalesce(column_ifexists('CpuUsage_d', real(null)), 0.5)) * 60.0,\n    AcaConsumptionRatePerCPUSecond = 0.000024\n| extend EstimatedCostUSD = CPUSeconds * AcaConsumptionRatePerCPUSecond\n| summarize\n    TotalTasks = count(),\n    AvgCPUSeconds = avg(CPUSeconds),\n    EstCostPerTask = avg(EstimatedCostUSD),\n    TotalEstCost = sum(EstimatedCostUSD)\n  by bin(TimeGenerated, 1d)\n| order by TimeGenerated asc\n| project TimeGenerated, TotalTasks, AvgCPUSeconds, EstCostPerTask, TotalEstCost",
+        "size": 0,
+        "title": "Panel 2: Estimated Cost Per Task (CPU-seconds × ACA Consumption Rate)",
+        "timeContext": {
+          "durationMs": 604800000
+        },
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "crossComponentResources": ["__APP_INSIGHTS_ID__"],
+        "visualization": "table",
+        "gridSettings": {
+          "formatters": [
+            {
+              "columnMatch": "EstCostPerTask",
+              "formatter": 0,
+              "formatOptions": {},
+              "numberFormat": {
+                "unit": 17,
+                "options": {
+                  "style": "currency",
+                  "currency": "USD",
+                  "minimumFractionDigits": 6
+                }
+              }
+            },
+            {
+              "columnMatch": "TotalEstCost",
+              "formatter": 0,
+              "formatOptions": {},
+              "numberFormat": {
+                "unit": 17,
+                "options": {
+                  "style": "currency",
+                  "currency": "USD",
+                  "minimumFractionDigits": 6
+                }
+              }
+            }
+          ]
+        }
+      },
+      "name": "cost-estimation-panel"
+    }
+  ],
+  "styleSettings": {},
+  "$schema": "https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json"
+}

@@ -1,0 +1,27 @@
+{
+  "name": "@optio/container-runtime-aca",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Azure Container Apps Jobs runtime for Optio — drop-in replacement for the K8s container-runtime",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@azure/arm-appcontainers": "^3.0.0",
+    "@azure/identity": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.2",
+    "typescript": "^5.4.0"
+  }
+}

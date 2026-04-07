@@ -1,0 +1,49 @@
+name: Build and Deploy Agent
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  id-token: write   # required for OIDC token exchange
+  contents: read
+
+jobs:
+  build-and-deploy:
+    name: Build agent image and deploy to ACA
+    runs-on: ubuntu-latest
+
+    env:
+      ACR_SERVER: acrdevd2thdvq46mgnw.azurecr.io
+      ACR_NAME: acrdevd2thdvq46mgnw
+      IMAGE_NAME: gsd-agent
+      RESOURCE_GROUP: rg-avd-dev-eastus
+      ACA_JOB_NAME: optio-agent-job
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build and push agent image via ACR Tasks
+        run: |
+          az acr build \
+            --registry "$ACR_NAME" \
+            --image "$IMAGE_NAME:${{ github.sha }}" \
+            --image "$IMAGE_NAME:latest" \
+            --file Dockerfile.agent \
+            .
+
+      - name: Update ACA Job to use new image
+        run: |
+          az containerapp job update \
+            --name "$ACA_JOB_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --image "$ACR_SERVER/$IMAGE_NAME:${{ github.sha }}"
