@@ -19,6 +19,7 @@ import {
   getCredentialSecret,
   resetCredentialSecret,
 } from "../services/credential-secret-service.js";
+import { computeSignature } from "../services/hmac-auth-service.js";
 
 // ─── Helpers ───
 
@@ -26,7 +27,14 @@ import {
 // module load order in the test suite.
 process.env.OPTIO_ENCRYPTION_KEY = "test-encryption-key-for-unit-tests";
 resetCredentialSecret();
-const VALID_BEARER = `Bearer ${getCredentialSecret()}`;
+const SECRET = getCredentialSecret();
+const VALID_BEARER = `Bearer ${SECRET}`;
+
+function makeHmacHeaders(path: string, timestampOverride?: number): Record<string, string> {
+  const ts = timestampOverride ?? Math.floor(Date.now() / 1000);
+  const sig = computeSignature(SECRET, ts, path);
+  return { "x-optio-signature": `t=${ts},sig=${sig}` };
+}
 
 async function buildTestApp(): Promise<FastifyInstance> {
   const app = Fastify({ logger: false });
@@ -49,14 +57,88 @@ describe("GET /api/internal/git-credentials", () => {
     vi.unstubAllGlobals();
   });
 
-  it("returns 401 when no Authorization header", async () => {
+  // --- HMAC signature auth ---
+
+  it("returns token with valid HMAC signature", async () => {
+    mockGetGitHubToken.mockResolvedValue("ghp_server_token");
+    const path = "/api/internal/git-credentials";
+
+    const res = await app.inject({
+      method: "GET",
+      url: path,
+      headers: makeHmacHeaders(path),
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ token: "ghp_server_token" });
+    expect(mockGetGitHubToken).toHaveBeenCalledWith({ server: true });
+  });
+
+  it("returns token with valid HMAC signature and taskId", async () => {
+    mockGetGitHubToken.mockResolvedValue("ghp_task_token");
+    const path = "/api/internal/git-credentials?taskId=task-123";
+
+    const res = await app.inject({
+      method: "GET",
+      url: path,
+      headers: makeHmacHeaders(path),
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ token: "ghp_task_token" });
+    expect(mockGetGitHubToken).toHaveBeenCalledWith({ taskId: "task-123" });
+  });
+
+  it("returns 401 with expired HMAC signature", async () => {
+    const expiredTs = Math.floor(Date.now() / 1000) - 400; // beyond 5-min window
+    const path = "/api/internal/git-credentials";
+
+    const res = await app.inject({
+      method: "GET",
+      url: path,
+      headers: makeHmacHeaders(path, expiredTs),
+    });
+
+    expect(res.statusCode).toBe(401);
+    expect(res.json().error).toBe("Signature expired");
+  });
+
+  it("returns 401 with invalid HMAC signature", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/internal/git-credentials",
+      headers: {
+        "x-optio-signature": `t=${Math.floor(Date.now() / 1000)},sig=bad_signature`,
+      },
+    });
+
+    expect(res.statusCode).toBe(401);
+    expect(res.json().error).toBe("Invalid signature");
+  });
+
+  it("returns 401 with HMAC signed for different path", async () => {
+    const path = "/api/internal/git-credentials";
+    const wrongPath = "/api/internal/other";
+
+    const res = await app.inject({
+      method: "GET",
+      url: path,
+      headers: makeHmacHeaders(wrongPath),
+    });
+
+    expect(res.statusCode).toBe(401);
+    expect(res.json().error).toBe("Invalid signature");
+  });
+
+  // --- Legacy Bearer token auth (backward compatibility) ---
+
+  it("returns 401 when no auth headers", async () => {
     const res = await app.inject({
       method: "GET",
       url: "/api/internal/git-credentials",
     });
 
     expect(res.statusCode).toBe(401);
-    expect(res.json().error).toBe("Unauthorized");
   });
 
   it("returns 401 when incorrect bearer token", async () => {
@@ -70,7 +152,7 @@ describe("GET /api/internal/git-credentials", () => {
     expect(res.json().error).toBe("Unauthorized");
   });
 
-  it("returns token with valid bearer and taskId query param", async () => {
+  it("returns token with valid legacy bearer and taskId query param", async () => {
     mockGetGitHubToken.mockResolvedValue("ghp_task_token");
 
     const res = await app.inject({
@@ -84,7 +166,7 @@ describe("GET /api/internal/git-credentials", () => {
     expect(mockGetGitHubToken).toHaveBeenCalledWith({ taskId: "task-123" });
   });
 
-  it("returns token with valid bearer and no taskId", async () => {
+  it("returns token with valid legacy bearer and no taskId", async () => {
     mockGetGitHubToken.mockResolvedValue("ghp_server_token");
 
     const res = await app.inject({
@@ -97,6 +179,8 @@ describe("GET /api/internal/git-credentials", () => {
     expect(res.json()).toEqual({ token: "ghp_server_token" });
     expect(mockGetGitHubToken).toHaveBeenCalledWith({ server: true });
   });
+
+  // --- Error handling ---
 
   it("returns 500 when token service throws", async () => {
     mockGetGitHubToken.mockRejectedValue(new Error("Token fetch failed"));

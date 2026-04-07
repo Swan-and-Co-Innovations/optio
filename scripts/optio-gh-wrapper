@@ -1,7 +1,17 @@
 #!/bin/bash
 # Wrapper for gh CLI — fetches a fresh GitHub token before each invocation.
 # Intended to be called as an alias/function, not as a replacement binary.
-export GITHUB_TOKEN=$(curl -sf -H "Authorization: Bearer ${OPTIO_CREDENTIAL_SECRET}" "${OPTIO_GIT_CREDENTIAL_URL}" | jq -r '.token')
+#
+# Authentication: HMAC-SHA256 signature over timestamp + request path.
+# The raw OPTIO_CREDENTIAL_SECRET never crosses the wire.
+
+# Extract path from URL and compute HMAC signature
+_ts=$(date +%s)
+_path=$(echo "${OPTIO_GIT_CREDENTIAL_URL}" | sed 's|^[a-z]*://[^/]*||')
+_sig=$(printf '%s.%s' "$_ts" "$_path" | openssl dgst -sha256 -hmac "${OPTIO_CREDENTIAL_SECRET}" | awk '{print $NF}')
+export GITHUB_TOKEN=$(curl -sf -H "X-Optio-Signature: t=${_ts},sig=${_sig}" "${OPTIO_GIT_CREDENTIAL_URL}" | jq -r '.token')
+unset _ts _path _sig
+
 # Resolve a path to its real target, with fallback if realpath is unavailable
 resolve_path() {
   realpath "$1" 2>/dev/null || readlink -f "$1" 2>/dev/null || echo "$1"

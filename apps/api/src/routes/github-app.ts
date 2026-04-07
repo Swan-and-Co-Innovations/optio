@@ -1,12 +1,11 @@
-import { timingSafeEqual } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { getGitHubToken } from "../services/github-token-service.js";
 import { isGitHubAppConfigured } from "../services/github-app-service.js";
 import {
   getCredentialSecret,
-  getOrDeriveCredentialSecret,
   resetCredentialSecret,
 } from "../services/credential-secret-service.js";
+import { verifyInternalRequest } from "../services/hmac-auth-service.js";
 
 export { getCredentialSecret, resetCredentialSecret };
 
@@ -31,24 +30,23 @@ export default async function githubAppRoutes(app: FastifyInstance): Promise<voi
    * Cluster-internal only: the Helm ingress blocks /api/internal/* from public traffic.
    * Pods reach this via the K8s service DNS (optio-api.optio.svc.cluster.local).
    *
+   * Authentication: HMAC-SHA256 signature in X-Optio-Signature header.
+   * The agent computes HMAC(secret, "{timestamp}.{path}") and sends
+   * "t={timestamp},sig={hex}" — the raw secret never crosses the wire.
+   * Legacy Bearer token is still accepted for backward compatibility.
+   *
    * With taskId: returns the task creator's user token (for task-scoped operations).
    * Without taskId: returns an installation token (for pod-level operations like clone).
    */
   app.get<{ Querystring: { taskId?: string } }>(
     "/api/internal/git-credentials",
     async (req, reply) => {
-      const secret = getOrDeriveCredentialSecret();
-      if (!secret) {
-        return reply.status(503).send({ error: "Credential secret not configured" });
-      }
-
-      const authHeader = req.headers.authorization ?? "";
-      const expected = `Bearer ${secret}`;
-      const isValid =
-        authHeader.length === expected.length &&
-        timingSafeEqual(Buffer.from(authHeader), Buffer.from(expected));
-      if (!isValid) {
-        return reply.status(401).send({ error: "Unauthorized" });
+      const authResult = verifyInternalRequest(
+        req.headers as Record<string, string | string[] | undefined>,
+        req.url,
+      );
+      if (authResult) {
+        return reply.status(authResult.status).send({ error: authResult.error });
       }
 
       try {

@@ -45,7 +45,14 @@ const WORKSPACE_HEADER = "x-workspace-id";
 /** Exact routes that are always public. */
 const PUBLIC_ROUTES = new Set(["/api/health", "/api/setup/status"]);
 
-/** Prefix-matched routes that are always public. */
+/**
+ * Prefix-matched routes that are always public.
+ *
+ * /api/internal/* routes are called by agent pods which don't have session
+ * cookies. They authenticate via HMAC-SHA256 signatures verified in the
+ * route handler itself (see hmac-auth-service.ts). The Helm ingress also
+ * blocks /api/internal/* from public traffic as defense in depth.
+ */
 const PUBLIC_PREFIXES = ["/api/webhooks/", "/ws/", "/api/internal/git-credentials"];
 
 /**
