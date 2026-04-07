@@ -12,10 +12,12 @@ const forceRestartSchema = z.object({
   prompt: z.string().min(1).optional(),
 });
 
+const idParamsSchema = z.object({ id: z.string() });
+
 export async function resumeRoutes(app: FastifyInstance) {
   // Resume a task that's in needs_attention or failed state
   app.post("/api/tasks/:id/resume", async (req, reply) => {
-    const { id } = req.params as { id: string };
+    const { id } = idParamsSchema.parse(req.params);
     const body = resumeSchema.parse(req.body ?? {});
 
     const task = await taskService.getTask(id);
@@ -57,7 +59,7 @@ export async function resumeRoutes(app: FastifyInstance) {
   // pod was recycled), this checks out the PR branch and starts a new session
   // with a context-aware prompt about what needs fixing.
   app.post("/api/tasks/:id/force-restart", async (req, reply) => {
-    const { id } = req.params as { id: string };
+    const { id } = idParamsSchema.parse(req.params);
     const body = forceRestartSchema.parse(req.body ?? {});
 
     const task = await taskService.getTask(id);

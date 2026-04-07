@@ -13,10 +13,12 @@ const createSubtaskSchema = z.object({
   autoQueue: z.boolean().optional(),
 });
 
+const idParamsSchema = z.object({ id: z.string() });
+
 export async function subtaskRoutes(app: FastifyInstance) {
   // List subtasks for a task
   app.get("/api/tasks/:id/subtasks", async (req, reply) => {
-    const { id } = req.params as { id: string };
+    const { id } = idParamsSchema.parse(req.params);
     const task = await taskService.getTask(id);
     if (!task) return reply.status(404).send({ error: "Task not found" });
     const wsId = req.user?.workspaceId;
@@ -29,7 +31,7 @@ export async function subtaskRoutes(app: FastifyInstance) {
 
   // Create a subtask
   app.post("/api/tasks/:id/subtasks", async (req, reply) => {
-    const { id } = req.params as { id: string };
+    const { id } = idParamsSchema.parse(req.params);
     const task = await taskService.getTask(id);
     if (!task) return reply.status(404).send({ error: "Task not found" });
     const wsId = req.user?.workspaceId;
@@ -69,7 +71,7 @@ export async function subtaskRoutes(app: FastifyInstance) {
 
   // Check blocking subtask status
   app.get("/api/tasks/:id/subtasks/status", async (req, reply) => {
-    const { id } = req.params as { id: string };
+    const { id } = idParamsSchema.parse(req.params);
     const task = await taskService.getTask(id);
     if (!task) return reply.status(404).send({ error: "Task not found" });
     const wsId = req.user?.workspaceId;

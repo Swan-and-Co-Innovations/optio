@@ -3,6 +3,9 @@ import { z } from "zod";
 import * as secretService from "../services/secret-service.js";
 import { requireRole } from "../plugins/auth.js";
 
+const scopeQuerySchema = z.object({ scope: z.string().optional() });
+const nameParamsSchema = z.object({ name: z.string() });
+
 const createSecretSchema = z.object({
   name: z.string().min(1),
   value: z.string().min(1),
@@ -12,7 +15,7 @@ const createSecretSchema = z.object({
 export async function secretRoutes(app: FastifyInstance) {
   // List secrets (names only) — any workspace member can view
   app.get("/api/secrets", async (req, reply) => {
-    const query = req.query as { scope?: string };
+    const query = scopeQuerySchema.parse(req.query);
     const workspaceId = req.user?.workspaceId ?? null;
     const secrets = await secretService.listSecrets(query.scope, workspaceId);
     reply.send({ secrets });
@@ -28,8 +31,8 @@ export async function secretRoutes(app: FastifyInstance) {
 
   // Delete secret — admin only
   app.delete("/api/secrets/:name", { preHandler: [requireRole("admin")] }, async (req, reply) => {
-    const { name } = req.params as { name: string };
-    const query = req.query as { scope?: string };
+    const { name } = nameParamsSchema.parse(req.params);
+    const query = scopeQuerySchema.parse(req.query);
     const workspaceId = req.user?.workspaceId ?? null;
     await secretService.deleteSecret(name, query.scope, workspaceId);
     reply.status(204).send();

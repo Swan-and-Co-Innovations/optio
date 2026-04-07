@@ -16,6 +16,17 @@ const createSessionSchema = z.object({
   repoUrl: z.string().url(),
 });
 
+const addSessionPrSchema = z.object({
+  prUrl: z.string().min(1),
+  prNumber: z.number().int().positive(),
+});
+
+const activeCountQuerySchema = z.object({
+  repoUrl: z.string().optional(),
+});
+
+const idParamsSchema = z.object({ id: z.string() });
+
 export async function sessionRoutes(app: FastifyInstance) {
   // List sessions — scoped to the current user
   app.get("/api/sessions", async (req, reply) => {
@@ -37,7 +48,7 @@ export async function sessionRoutes(app: FastifyInstance) {
 
   // Get session — verify ownership
   app.get("/api/sessions/:id", async (req, reply) => {
-    const { id } = req.params as { id: string };
+    const { id } = idParamsSchema.parse(req.params);
     const session = await sessionService.getSession(id);
     if (!session) return reply.status(404).send({ error: "Session not found" });
 
@@ -75,7 +86,7 @@ export async function sessionRoutes(app: FastifyInstance) {
 
   // End session — verify ownership
   app.post("/api/sessions/:id/end", async (req, reply) => {
-    const { id } = req.params as { id: string };
+    const { id } = idParamsSchema.parse(req.params);
     const session = await sessionService.getSession(id);
     if (!session) return reply.status(404).send({ error: "Session not found" });
 
@@ -94,7 +105,7 @@ export async function sessionRoutes(app: FastifyInstance) {
 
   // List PRs for a session — verify ownership
   app.get("/api/sessions/:id/prs", async (req, reply) => {
-    const { id } = req.params as { id: string };
+    const { id } = idParamsSchema.parse(req.params);
     const session = await sessionService.getSession(id);
     if (!session) return reply.status(404).send({ error: "Session not found" });
 
@@ -108,7 +119,7 @@ export async function sessionRoutes(app: FastifyInstance) {
 
   // Add a PR to a session — verify ownership
   app.post("/api/sessions/:id/prs", async (req, reply) => {
-    const { id } = req.params as { id: string };
+    const { id } = idParamsSchema.parse(req.params);
     const session = await sessionService.getSession(id);
     if (!session) return reply.status(404).send({ error: "Session not found" });
 
@@ -116,17 +127,17 @@ export async function sessionRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: "Session not found" });
     }
 
-    const body = req.body as { prUrl: string; prNumber: number };
-    if (!body.prUrl || !body.prNumber) {
-      return reply.status(400).send({ error: "prUrl and prNumber required" });
+    const parsed = addSessionPrSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: parsed.error.issues[0].message });
     }
-    const pr = await sessionService.addSessionPr(id, body.prUrl, body.prNumber);
+    const pr = await sessionService.addSessionPr(id, parsed.data.prUrl, parsed.data.prNumber);
     reply.status(201).send({ pr });
   });
 
   // Get active session count
   app.get("/api/sessions/active-count", async (req, reply) => {
-    const { repoUrl } = req.query as { repoUrl?: string };
+    const { repoUrl } = activeCountQuerySchema.parse(req.query);
     const count = await sessionService.getActiveSessionCount(repoUrl);
     reply.send({ count });
   });

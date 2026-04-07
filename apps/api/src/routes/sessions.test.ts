@@ -305,7 +305,7 @@ describe("session PRs", () => {
     });
 
     expect(res.statusCode).toBe(400);
-    expect(res.json().error).toBe("prUrl and prNumber required");
+    expect(res.json().error).toBeDefined();
   });
 });
 

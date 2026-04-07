@@ -24,6 +24,14 @@ export default tseslint.config(
       "@typescript-eslint/no-require-imports": "off",
       "no-console": ["warn", { allow: ["warn", "error"] }],
       "prefer-const": "warn",
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "TSAsExpression > MemberExpression[object.name='req'][property.name=/^(body|params|query)$/]",
+          message: "Validate request input with a Zod schema instead of casting with `as`.",
+        },
+      ],
     },
   },
 );

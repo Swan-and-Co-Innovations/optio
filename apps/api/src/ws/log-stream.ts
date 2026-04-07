@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { z } from "zod";
 import { createSubscriber } from "../services/event-bus.js";
 import { authenticateWs } from "./ws-auth.js";
 import { getTask, getTaskLogs } from "../services/task-service.js";
@@ -24,7 +25,7 @@ export async function logStreamWs(app: FastifyInstance) {
       return;
     }
 
-    const { taskId } = req.params as { taskId: string };
+    const { taskId } = z.object({ taskId: z.string() }).parse(req.params);
 
     // Verify the task exists and belongs to the user's workspace
     const task = await getTask(taskId);

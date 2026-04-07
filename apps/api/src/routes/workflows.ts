@@ -31,6 +31,15 @@ const updateTemplateSchema = z.object({
   status: z.enum(["draft", "active", "archived"]).optional(),
 });
 
+const runWorkflowBodySchema = z
+  .object({
+    repoUrl: z.string().optional(),
+  })
+  .optional()
+  .default({});
+
+const idParamsSchema = z.object({ id: z.string() });
+
 export async function workflowRoutes(app: FastifyInstance) {
   // List workflow templates
   app.get("/api/workflow-templates", async (req, reply) => {
@@ -42,7 +51,7 @@ export async function workflowRoutes(app: FastifyInstance) {
 
   // Get a workflow template
   app.get("/api/workflow-templates/:id", async (req, reply) => {
-    const { id } = req.params as { id: string };
+    const { id } = idParamsSchema.parse(req.params);
     const template = await workflowService.getWorkflowTemplate(id);
     if (!template) return reply.status(404).send({ error: "Workflow template not found" });
     reply.send({ template });
@@ -65,7 +74,7 @@ export async function workflowRoutes(app: FastifyInstance) {
 
   // Update a workflow template
   app.patch("/api/workflow-templates/:id", async (req, reply) => {
-    const { id } = req.params as { id: string };
+    const { id } = idParamsSchema.parse(req.params);
     const input = updateTemplateSchema.parse(req.body);
     try {
       const template = await workflowService.updateWorkflowTemplate(id, input);
@@ -78,7 +87,7 @@ export async function workflowRoutes(app: FastifyInstance) {
 
   // Delete a workflow template
   app.delete("/api/workflow-templates/:id", async (req, reply) => {
-    const { id } = req.params as { id: string };
+    const { id } = idParamsSchema.parse(req.params);
     const deleted = await workflowService.deleteWorkflowTemplate(id);
     if (!deleted) return reply.status(404).send({ error: "Workflow template not found" });
     reply.status(204).send();
@@ -86,13 +95,17 @@ export async function workflowRoutes(app: FastifyInstance) {
 
   // Run a workflow template (instantiate)
   app.post("/api/workflow-templates/:id/run", async (req, reply) => {
-    const { id } = req.params as { id: string };
-    const body = req.body as { repoUrl?: string } | undefined;
+    const { id } = idParamsSchema.parse(req.params);
+    const parsed = runWorkflowBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: parsed.error.issues[0].message });
+    }
+    const body = parsed.data;
     try {
       const run = await workflowService.runWorkflow(id, {
         workspaceId: req.user?.workspaceId ?? undefined,
         createdBy: req.user?.id,
-        repoUrlOverride: body?.repoUrl,
+        repoUrlOverride: body.repoUrl,
       });
       reply.status(201).send({ run });
     } catch (err) {
@@ -102,14 +115,14 @@ export async function workflowRoutes(app: FastifyInstance) {
 
   // List workflow runs for a template
   app.get("/api/workflow-templates/:id/runs", async (req, reply) => {
-    const { id } = req.params as { id: string };
+    const { id } = idParamsSchema.parse(req.params);
     const runs = await workflowService.listWorkflowRuns(id);
     reply.send({ runs });
   });
 
   // Get a workflow run
   app.get("/api/workflow-runs/:id", async (req, reply) => {
-    const { id } = req.params as { id: string };
+    const { id } = idParamsSchema.parse(req.params);
     const run = await workflowService.getWorkflowRun(id);
     if (!run) return reply.status(404).send({ error: "Workflow run not found" });
     reply.send({ run });

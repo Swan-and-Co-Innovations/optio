@@ -33,6 +33,9 @@ const updateMemberSchema = z.object({
   role: z.enum(["admin", "member", "viewer"]),
 });
 
+const idParamsSchema = z.object({ id: z.string() });
+const memberParamsSchema = z.object({ id: z.string(), userId: z.string() });
+
 export async function workspaceRoutes(app: FastifyInstance) {
   // List current user's workspaces
   app.get("/api/workspaces", async (req, reply) => {
@@ -44,7 +47,7 @@ export async function workspaceRoutes(app: FastifyInstance) {
   // Get a single workspace
   app.get("/api/workspaces/:id", async (req, reply) => {
     if (!req.user) return reply.status(401).send({ error: "Authentication required" });
-    const { id } = req.params as { id: string };
+    const { id } = idParamsSchema.parse(req.params);
     const workspace = await workspaceService.getWorkspace(id);
     if (!workspace) return reply.status(404).send({ error: "Workspace not found" });
 
@@ -65,7 +68,7 @@ export async function workspaceRoutes(app: FastifyInstance) {
   // Update a workspace
   app.patch("/api/workspaces/:id", async (req, reply) => {
     if (!req.user) return reply.status(401).send({ error: "Authentication required" });
-    const { id } = req.params as { id: string };
+    const { id } = idParamsSchema.parse(req.params);
 
     const role = await workspaceService.getUserRole(id, req.user.id);
     if (role !== "admin") return reply.status(403).send({ error: "Admin role required" });
@@ -79,7 +82,7 @@ export async function workspaceRoutes(app: FastifyInstance) {
   // Delete a workspace
   app.delete("/api/workspaces/:id", async (req, reply) => {
     if (!req.user) return reply.status(401).send({ error: "Authentication required" });
-    const { id } = req.params as { id: string };
+    const { id } = idParamsSchema.parse(req.params);
 
     const role = await workspaceService.getUserRole(id, req.user.id);
     if (role !== "admin") return reply.status(403).send({ error: "Admin role required" });
@@ -91,7 +94,7 @@ export async function workspaceRoutes(app: FastifyInstance) {
   // Switch active workspace
   app.post("/api/workspaces/:id/switch", async (req, reply) => {
     if (!req.user) return reply.status(401).send({ error: "Authentication required" });
-    const { id } = req.params as { id: string };
+    const { id } = idParamsSchema.parse(req.params);
     await workspaceService.switchWorkspace(req.user.id, id);
     reply.send({ ok: true });
   });
@@ -99,7 +102,7 @@ export async function workspaceRoutes(app: FastifyInstance) {
   // List workspace members
   app.get("/api/workspaces/:id/members", async (req, reply) => {
     if (!req.user) return reply.status(401).send({ error: "Authentication required" });
-    const { id } = req.params as { id: string };
+    const { id } = idParamsSchema.parse(req.params);
 
     const role = await workspaceService.getUserRole(id, req.user.id);
     if (!role) return reply.status(403).send({ error: "Not a member of this workspace" });
@@ -111,7 +114,7 @@ export async function workspaceRoutes(app: FastifyInstance) {
   // Add a member
   app.post("/api/workspaces/:id/members", async (req, reply) => {
     if (!req.user) return reply.status(401).send({ error: "Authentication required" });
-    const { id } = req.params as { id: string };
+    const { id } = idParamsSchema.parse(req.params);
 
     const callerRole = await workspaceService.getUserRole(id, req.user.id);
     if (callerRole !== "admin") return reply.status(403).send({ error: "Admin role required" });
@@ -132,7 +135,7 @@ export async function workspaceRoutes(app: FastifyInstance) {
   // Update member role
   app.patch("/api/workspaces/:id/members/:userId", async (req, reply) => {
     if (!req.user) return reply.status(401).send({ error: "Authentication required" });
-    const { id, userId } = req.params as { id: string; userId: string };
+    const { id, userId } = memberParamsSchema.parse(req.params);
 
     const callerRole = await workspaceService.getUserRole(id, req.user.id);
     if (callerRole !== "admin") return reply.status(403).send({ error: "Admin role required" });
@@ -145,7 +148,7 @@ export async function workspaceRoutes(app: FastifyInstance) {
   // Remove a member
   app.delete("/api/workspaces/:id/members/:userId", async (req, reply) => {
     if (!req.user) return reply.status(401).send({ error: "Authentication required" });
-    const { id, userId } = req.params as { id: string; userId: string };
+    const { id, userId } = memberParamsSchema.parse(req.params);
 
     const callerRole = await workspaceService.getUserRole(id, req.user.id);
     if (callerRole !== "admin") return reply.status(403).send({ error: "Admin role required" });
