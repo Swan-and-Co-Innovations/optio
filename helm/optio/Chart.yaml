@@ -4,3 +4,15 @@ description: AI Agent Workflow Orchestration
 type: application
 version: 0.1.0
 appVersion: "0.1.0"
+home: https://github.com/jonwiggins/optio
+sources:
+  - https://github.com/jonwiggins/optio
+keywords:
+  - ai
+  - agent
+  - orchestration
+  - kubernetes
+  - workflow
+maintainers:
+  - name: jonwiggins
+    url: https://github.com/jonwiggins

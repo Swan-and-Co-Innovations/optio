@@ -253,10 +253,41 @@ The secret must contain these keys: `GITHUB_APP_ID`, `GITHUB_APP_CLIENT_ID`, `GI
 
 ## Production Deployment
 
-Optio ships with a Helm chart for production Kubernetes clusters:
+Optio ships with a Helm chart for production Kubernetes clusters. Three installation methods are available:
+
+### Install from Helm repository (recommended)
 
 ```bash
-helm install optio helm/optio \
+helm repo add optio https://jonwiggins.github.io/optio
+helm repo update
+helm install optio optio/optio -n optio --create-namespace \
+  --set encryption.key=$(openssl rand -hex 32) \
+  --set postgresql.enabled=false \
+  --set externalDatabase.url="postgres://..." \
+  --set redis.enabled=false \
+  --set externalRedis.url="redis://..." \
+  --set ingress.enabled=true \
+  --set ingress.hosts[0].host=optio.example.com
+```
+
+### Install from OCI registry
+
+```bash
+helm install optio oci://ghcr.io/jonwiggins/optio -n optio --create-namespace \
+  --set encryption.key=$(openssl rand -hex 32) \
+  --set postgresql.enabled=false \
+  --set externalDatabase.url="postgres://..." \
+  --set redis.enabled=false \
+  --set externalRedis.url="redis://..." \
+  --set ingress.enabled=true \
+  --set ingress.hosts[0].host=optio.example.com
+```
+
+### Install from source
+
+```bash
+git clone https://github.com/jonwiggins/optio.git && cd optio
+helm install optio helm/optio -n optio --create-namespace \
   --set encryption.key=$(openssl rand -hex 32) \
   --set postgresql.enabled=false \
   --set externalDatabase.url="postgres://..." \
