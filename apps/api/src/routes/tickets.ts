@@ -7,7 +7,15 @@ import { ticketProviders } from "../db/schema.js";
 import { TaskState } from "@optio/shared";
 import * as taskService from "../services/task-service.js";
 import { syncAllTickets } from "../services/ticket-sync-service.js";
+import { storeSecret, deleteSecret } from "../services/secret-service.js";
 import { logger } from "../logger.js";
+
+/** Fields per provider type that contain credentials and must be encrypted. */
+const SENSITIVE_PROVIDER_FIELDS: Record<string, string[]> = {
+  jira: ["apiToken"],
+  linear: ["apiKey"],
+  notion: ["apiKey"],
+};
 
 /** Maximum age (in minutes) for a webhook event before it is rejected. */
 const WEBHOOK_MAX_AGE_MINUTES = 5;
@@ -53,14 +61,37 @@ export async function ticketRoutes(app: FastifyInstance) {
   // Configure a ticket provider
   app.post("/api/tickets/providers", async (req, reply) => {
     const body = req.body as { source: string; config: Record<string, unknown>; enabled?: boolean };
+
+    // Separate sensitive fields from config — they go into encrypted secrets
+    const sensitiveFields = SENSITIVE_PROVIDER_FIELDS[body.source] ?? [];
+    const safeConfig = { ...body.config };
+    const sensitiveValues: Record<string, string> = {};
+
+    for (const field of sensitiveFields) {
+      if (safeConfig[field]) {
+        sensitiveValues[field] = safeConfig[field] as string;
+        delete safeConfig[field];
+      }
+    }
+
     const [provider] = await db
       .insert(ticketProviders)
       .values({
         source: body.source,
-        config: body.config,
+        config: safeConfig,
         enabled: body.enabled ?? true,
       })
       .returning();
+
+    // Store sensitive fields as encrypted secret
+    if (Object.keys(sensitiveValues).length > 0) {
+      await storeSecret(
+        `ticket-provider:${provider.id}`,
+        JSON.stringify(sensitiveValues),
+        "ticket-provider",
+      );
+    }
+
     reply.status(201).send({ provider });
   });
 
@@ -68,6 +99,8 @@ export async function ticketRoutes(app: FastifyInstance) {
   app.delete("/api/tickets/providers/:id", async (req, reply) => {
     const { id } = req.params as { id: string };
     await db.delete(ticketProviders).where(eq(ticketProviders.id, id));
+    // Clean up associated encrypted credentials
+    await deleteSecret(`ticket-provider:${id}`, "ticket-provider");
     reply.status(204).send();
   });
 

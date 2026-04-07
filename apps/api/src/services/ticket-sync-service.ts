@@ -6,6 +6,7 @@ import type { TicketSource } from "@optio/shared";
 import { TaskState, normalizeRepoUrl } from "@optio/shared";
 import * as taskService from "./task-service.js";
 import { taskQueue } from "../workers/task-worker.js";
+import { retrieveSecret } from "./secret-service.js";
 import { logger } from "../logger.js";
 
 export async function syncAllTickets(): Promise<number> {
@@ -14,15 +15,28 @@ export async function syncAllTickets(): Promise<number> {
     .from(ticketProviders)
     .where(eq(ticketProviders.enabled, true));
 
+  // Fetch configured repos once before the provider loop (avoids redundant queries)
+  const configuredRepos = await db.select({ repoUrl: repos.repoUrl }).from(repos);
+
   let totalSynced = 0;
 
   for (const providerConfig of providers) {
     try {
-      const provider = getTicketProvider(providerConfig.source as TicketSource);
-      const tickets = await provider.fetchActionableTickets(providerConfig.config);
+      // Merge encrypted credentials from secrets store into provider config
+      let mergedConfig = { ...((providerConfig.config as Record<string, unknown>) ?? {}) };
+      try {
+        const secretJson = await retrieveSecret(
+          `ticket-provider:${providerConfig.id}`,
+          "ticket-provider",
+        );
+        const credentials = JSON.parse(secretJson);
+        mergedConfig = { ...mergedConfig, ...credentials };
+      } catch {
+        // No secrets stored for this provider — use config as-is
+      }
 
-      // Fetch configured repos once for path-suffix matching (avoids N+1 queries)
-      const configuredRepos = await db.select({ repoUrl: repos.repoUrl }).from(repos);
+      const provider = getTicketProvider(providerConfig.source as TicketSource);
+      const tickets = await provider.fetchActionableTickets(mergedConfig);
 
       for (const ticket of tickets) {
         // Construct repo URL: use the ticket's repo field, or fall back to provider config
@@ -40,13 +54,16 @@ export async function syncAllTickets(): Promise<number> {
             if (match) {
               repoUrl = normalizeRepoUrl(match.repoUrl);
             } else if (providerConfig.source === "gitlab") {
-              repoUrl = normalizeRepoUrl(`https://gitlab.com/${repo}`);
+              // Use provider config baseUrl for self-hosted GitLab instances
+              const baseUrl =
+                (mergedConfig as Record<string, unknown>).baseUrl ?? "https://gitlab.com";
+              repoUrl = normalizeRepoUrl(`${baseUrl}/${repo}`);
             } else {
               repoUrl = normalizeRepoUrl(`https://github.com/${repo}`);
             }
           }
         } else {
-          repoUrl = (providerConfig.config as any).repoUrl;
+          repoUrl = (mergedConfig as any).repoUrl;
         }
 
         if (!repoUrl) {
@@ -69,10 +86,7 @@ export async function syncAllTickets(): Promise<number> {
         // Fetch comments for context
         let commentsSection = "";
         try {
-          const comments = await provider.fetchTicketComments(
-            ticket.externalId,
-            providerConfig.config,
-          );
+          const comments = await provider.fetchTicketComments(ticket.externalId, mergedConfig);
           if (comments.length > 0) {
             commentsSection =
               "\n\n## Comments\n\n" +
@@ -128,7 +142,7 @@ export async function syncAllTickets(): Promise<number> {
           await provider.addComment(
             ticket.externalId,
             `🤖 **Optio** is working on this issue.\n\nTask ID: \`${task.id}\`\nAgent: ${agentType}`,
-            providerConfig.config,
+            mergedConfig,
           );
         } catch (commentErr) {
           logger.warn(

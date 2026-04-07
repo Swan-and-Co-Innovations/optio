@@ -264,6 +264,27 @@ describe("JiraTicketProvider pagination", () => {
     ]);
   });
 
+  it("trims whitespace from repo: label extraction", async () => {
+    const issue = makeJiraIssue("TEST-1", 1);
+    // Simulate a label like "repo: acme/backend" (space after colon)
+    issue.fields.labels = ["optio", "repo: acme/backend"];
+    const searchForIssuesUsingJqlEnhancedSearch = vi.fn().mockResolvedValueOnce({
+      issues: [issue],
+    });
+
+    vi.mocked(Version3Client).mockImplementation(
+      () =>
+        ({
+          issueSearch: { searchForIssuesUsingJqlEnhancedSearch },
+        }) as unknown as InstanceType<typeof Version3Client>,
+    );
+
+    const provider = new JiraTicketProvider();
+    const tickets = await provider.fetchActionableTickets(baseConfig());
+
+    expect(tickets[0].repo).toBe("acme/backend");
+  });
+
   it("converts ADF description to plaintext", async () => {
     const issue = makeJiraIssue("TEST-123", 1);
     const searchForIssuesUsingJqlEnhancedSearch = vi.fn().mockResolvedValueOnce({
