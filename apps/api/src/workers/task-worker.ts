@@ -511,9 +511,9 @@ export function startTaskWorker() {
               imagePreset: repoConfig?.imagePreset ?? "base",
               timeoutMs: (repoConfig as any)?.replicaTimeoutInSeconds
                 ? (repoConfig as any).replicaTimeoutInSeconds * 1000
-                : 1_800_000,
-              cpu: 1,
-              memory: "2Gi",
+                : 3_600_000,
+              cpu: 2,
+              memory: "4Gi",
             },
           );
 
@@ -1485,6 +1485,28 @@ export function buildAgentCommand(
         `  --approval-mode yolo${geminiModelFlag}`,
       ];
     }
+    case "azure-foundry": {
+      // Azure Foundry routes through the Codex CLI with OPENAI_BASE_URL pointed
+      // at the Azure OpenAI endpoint. The adapter sets OPENAI_BASE_URL,
+      // OPENAI_API_VERSION, and AZURE_OPENAI_API_VERSION in the env block.
+      // AZURE_FOUNDRY_API_KEY is mapped to OPENAI_API_KEY by the entrypoint.
+      const deploymentFlag = env.OPTIO_AZURE_FOUNDRY_DEPLOYMENT
+        ? ` --model ${JSON.stringify(env.OPTIO_AZURE_FOUNDRY_DEPLOYMENT)}`
+        : "";
+      const authSetup =
+        env.OPTIO_AZURE_FOUNDRY_AUTH_MODE === "managed-identity"
+          ? [
+              `echo "[optio] Acquiring Azure managed identity token..."`,
+              `export OPENAI_API_KEY=$(curl -sf -H "Metadata: true" "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://cognitiveservices.azure.com/" | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null || echo "")`,
+              `if [ -z "$OPENAI_API_KEY" ]; then echo "[optio] WARNING: Failed to acquire managed identity token" >&2; fi`,
+            ]
+          : [`export OPENAI_API_KEY="$AZURE_FOUNDRY_API_KEY"`];
+      return [
+        ...authSetup,
+        `echo "[optio] Running Azure Foundry (Codex CLI → Azure OpenAI)${opts?.isReview ? " (review)" : ""}..."`,
+        `codex exec --full-auto "$OPTIO_PROMPT"${deploymentFlag} --json`,
+      ];
+    }
     default:
       return [`echo "Unknown agent type: ${agentType}" && exit 1`];
   }
@@ -1544,6 +1566,29 @@ export function inferExitCode(agentType: string, logs: string): number {
       const hasModelError = /model.*not found|model_not_found|does not exist.*model/i.test(logs);
       const hasTurnLimit = /turn.?limit|exit code 53/i.test(logs);
       return hasErrorEvent || hasAuthError || hasQuotaError || hasModelError || hasTurnLimit
+        ? 1
+        : 0;
+    }
+    case "azure-foundry": {
+      // Azure Foundry routes through Codex CLI — same error patterns as codex,
+      // plus Azure-specific deployment/auth errors
+      const hasErrorEvent = logs.includes('"type":"error"') || logs.includes('"type": "error"');
+      const hasApiErrorEnvelope = /"error"\s*:\s*\{\s*"message"/.test(logs);
+      const hasAuthError =
+        /AZURE_FOUNDRY_API_KEY|OPENAI_API_KEY|azure.*openai|unauthorized|authentication.*failed|managed.?identity/i.test(
+          logs,
+        );
+      const hasDeploymentError =
+        /DeploymentNotFound|deployment.*not.*found|resource.*not.*found/i.test(logs);
+      const hasQuotaError = /quota|rate.?limit|throttl|429|too many requests/i.test(logs);
+      const hasContentFilter =
+        /content.?filter|content.?policy|ResponsibleAIPolicyViolation/i.test(logs);
+      return hasErrorEvent ||
+        hasApiErrorEnvelope ||
+        hasAuthError ||
+        hasDeploymentError ||
+        hasQuotaError ||
+        hasContentFilter
         ? 1
         : 0;
     }
