@@ -16,6 +16,7 @@ COPY packages/shared/package.json packages/shared/tsconfig.json packages/shared/
 COPY packages/container-runtime/package.json packages/container-runtime/tsconfig.json packages/container-runtime/
 COPY packages/container-runtime-aca/package.json packages/container-runtime-aca/tsconfig.json packages/container-runtime-aca/
 COPY packages/agent-adapters/package.json packages/agent-adapters/tsconfig.json packages/agent-adapters/
+COPY packages/agent-adapter-gsd/package.json packages/agent-adapter-gsd/tsconfig.json packages/agent-adapter-gsd/
 COPY packages/ticket-providers/package.json packages/ticket-providers/tsconfig.json packages/ticket-providers/
 
 # Install production dependencies (--ignore-scripts avoids husky prepare hook)
