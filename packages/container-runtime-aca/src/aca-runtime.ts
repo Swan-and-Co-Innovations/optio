@@ -27,11 +27,7 @@ import type {
   ExecutionStatus,
   TerminalExecutionState,
 } from "./types.js";
-import {
-  AcaApiError,
-  ExecutionTimeoutError,
-  ValidationError,
-} from "./types.js";
+import { AcaApiError, ExecutionTimeoutError, ValidationError } from "./types.js";
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
@@ -348,22 +344,51 @@ export class AcaContainerRuntime {
     assertNonEmpty(jobName, "jobName");
     assertNonEmpty(executionName, "executionName");
 
-    const { resourceGroup } = this.config;
+    // Wait for Log Analytics ingestion (typically 1-3 minutes)
+    const LOG_INGEST_WAIT_MS = 90_000;
+    console.log(`[AcaContainerRuntime] Waiting ${LOG_INGEST_WAIT_MS / 1000}s for log ingestion...`);
+    await sleep(LOG_INGEST_WAIT_MS);
+
+    // Query Log Analytics REST API using the same credential chain
+    const workspaceId = process.env.ACA_LOG_ANALYTICS_WORKSPACE_ID;
+    if (!workspaceId) {
+      console.warn(
+        "[AcaContainerRuntime] ACA_LOG_ANALYTICS_WORKSPACE_ID not set — cannot retrieve logs",
+      );
+      return "";
+    }
 
     try {
-      const { execSync } = await import("child_process");
-      // az containerapp job logs show is the correct sub-command for ACA job executions
-      const output = execSync(
-        `az containerapp job logs show --name "${jobName}" --resource-group "${resourceGroup}" --execution "${executionName}" --follow false 2>&1`,
-        { encoding: "utf8", timeout: 30_000 },
-      );
-      return output;
+      const credential = new DefaultAzureCredential();
+      const token = await credential.getToken("https://api.loganalytics.io/.default");
+
+      const query = `ContainerAppConsoleLogs_CL | where ContainerGroupName_s startswith '${jobName}' | order by TimeGenerated asc | project Log_s`;
+
+      const res = await fetch(`https://api.loganalytics.io/v1/workspaces/${workspaceId}/query`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token.token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ query, timespan: "PT2H" }),
+      });
+
+      if (!res.ok) {
+        const body = await res.text();
+        console.warn(
+          `[AcaContainerRuntime] Log Analytics query failed (${res.status}): ${body.slice(0, 200)}`,
+        );
+        return "";
+      }
+
+      const data = (await res.json()) as { tables: Array<{ rows: string[][] }> };
+      const rows = data.tables?.[0]?.rows ?? [];
+      const logs = rows.map((r: string[]) => r[0]).join("\n");
+      console.log(`[AcaContainerRuntime] Retrieved ${rows.length} log lines from Log Analytics`);
+      return logs;
     } catch (err) {
-      // Log retrieval is best-effort — return empty string rather than failing the caller
       const message = err instanceof Error ? err.message : String(err);
-      console.warn(
-        `[AcaContainerRuntime] getLogs failed for '${executionName}' (non-fatal): ${message}`,
-      );
+      console.warn(`[AcaContainerRuntime] getLogs failed (non-fatal): ${message}`);
       return "";
     }
   }
@@ -417,6 +442,52 @@ export class AcaContainerRuntime {
     } catch (err) {
       if (err instanceof ValidationError) throw err;
       wrapAcaError(`listExecutions(${jobName})`, err);
+    }
+  }
+
+  /**
+   * Query Log Analytics for container logs from an ACA Job.
+   * Returns lines after `afterIndex` for incremental polling.
+   * Uses the same DefaultAzureCredential as the ARM client.
+   */
+  async queryLogAnalytics(
+    jobName: string,
+    afterIndex: number = 0,
+  ): Promise<{ lines: string[]; totalCount: number }> {
+    const workspaceId = process.env.ACA_LOG_ANALYTICS_WORKSPACE_ID;
+    if (!workspaceId) return { lines: [], totalCount: afterIndex };
+
+    try {
+      const credential = new DefaultAzureCredential();
+      const token = await credential.getToken("https://api.loganalytics.io/.default");
+
+      const query = `ContainerAppConsoleLogs_CL | where ContainerGroupName_s startswith '${jobName}' | order by TimeGenerated asc | project Log_s`;
+
+      const res = await fetch(`https://api.loganalytics.io/v1/workspaces/${workspaceId}/query`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token.token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ query, timespan: "PT2H" }),
+      });
+
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        console.warn(
+          `[AcaContainerRuntime] Log Analytics query failed (${res.status}): ${body.slice(0, 200)}`,
+        );
+        return { lines: [], totalCount: afterIndex };
+      }
+
+      const data = (await res.json()) as { tables: Array<{ rows: string[][] }> };
+      const allRows = data.tables?.[0]?.rows ?? [];
+      const newLines = allRows.slice(afterIndex).map((r: string[]) => r[0]);
+      return { lines: newLines, totalCount: allRows.length };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(`[AcaContainerRuntime] queryLogAnalytics failed: ${message}`);
+      return { lines: [], totalCount: afterIndex };
     }
   }
 }

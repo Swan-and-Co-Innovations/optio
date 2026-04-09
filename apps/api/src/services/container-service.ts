@@ -2,12 +2,45 @@ import { createRuntime, type ContainerRuntime } from "@optio/container-runtime";
 import type { ContainerSpec, ContainerHandle, ContainerStatus } from "@optio/shared";
 import { DEFAULT_AGENT_IMAGE } from "@optio/shared";
 
+/**
+ * No-op runtime stub for ACA deployments.
+ *
+ * In ACA mode, agent tasks run as ACA Jobs (via AcaContainerRuntime),
+ * not as K8s pods or Docker containers. The workers that call getRuntime()
+ * (repo-cleanup, task-worker) need a runtime that won't crash — this stub
+ * returns safe defaults so those code paths degrade gracefully.
+ */
+const acaStubRuntime: ContainerRuntime = {
+  async create() {
+    throw new Error("ACA runtime: use AcaContainerRuntime.createJob() instead");
+  },
+  async status() {
+    return { state: "unknown" } as ContainerStatus;
+  },
+  async *logs() {
+    /* no-op */
+  },
+  async exec() {
+    throw new Error("ACA runtime: use AcaContainerRuntime for exec");
+  },
+  async destroy() {
+    /* no-op */
+  },
+  async ping() {
+    return true;
+  },
+};
+
 let runtime: ContainerRuntime | null = null;
 
 export function getRuntime(): ContainerRuntime {
   if (!runtime) {
-    const type = (process.env.OPTIO_RUNTIME ?? "docker") as "docker" | "kubernetes";
-    runtime = createRuntime({ type });
+    const type = process.env.OPTIO_RUNTIME ?? "docker";
+    if (type === "aca") {
+      runtime = acaStubRuntime;
+    } else {
+      runtime = createRuntime({ type: type as "docker" | "kubernetes" });
+    }
   }
   return runtime;
 }
@@ -54,5 +87,8 @@ export async function destroyAgentContainer(handle: ContainerHandle): Promise<vo
 }
 
 export async function checkRuntimeHealth(): Promise<boolean> {
+  // ACA runtime: the API is already running inside Azure Container Apps,
+  // so the runtime is inherently available — no ping needed.
+  if ((process.env.OPTIO_RUNTIME ?? "docker") === "aca") return true;
   return getRuntime().ping();
 }

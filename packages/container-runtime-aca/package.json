@@ -4,13 +4,8 @@
   "private": true,
   "type": "module",
   "description": "Azure Container Apps Jobs runtime for Optio — drop-in replacement for the K8s container-runtime",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
   "exports": {
-    ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
-    }
+    ".": "./src/index.ts"
   },
   "scripts": {
     "build": "tsc",

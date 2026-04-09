@@ -483,6 +483,163 @@ export function startTaskWorker() {
             : {}),
         };
 
+        // ── ACA runtime: execute task as an ACA Job ─────────────────
+        if (process.env.OPTIO_RUNTIME === "aca") {
+          const { executeTaskAsAcaJob } = await import("../services/aca-task-service.js");
+
+          await taskService.transitionTask(taskId, TaskState.RUNNING, "aca_job_starting");
+          log.info("Executing task as ACA Job");
+
+          // Build the agent command
+          const isReviewTask =
+            !!reviewOverride || task.taskType === "review" || task.taskType === "pr_review";
+          const agentCommand = buildAgentCommand(task.agentType, allEnv, {
+            resumeSessionId,
+            resumePrompt,
+            isReview: isReviewTask,
+            maxTurnsCoding: repoConfig?.maxTurnsCoding ?? undefined,
+            maxTurnsReview: repoConfig?.maxTurnsReview ?? undefined,
+          });
+
+          const acaResult = await executeTaskAsAcaJob(
+            task.id,
+            task.repoUrl,
+            task.repoBranch,
+            agentCommand,
+            allEnv,
+            {
+              imagePreset: repoConfig?.imagePreset ?? "base",
+              timeoutMs: (repoConfig as any)?.replicaTimeoutInSeconds
+                ? (repoConfig as any).replicaTimeoutInSeconds * 1000
+                : 1_800_000,
+              cpu: 1,
+              memory: "2Gi",
+            },
+          );
+
+          // Store logs
+          await taskService.appendTaskLog(taskId, acaResult.logs, "stdout", "text");
+
+          // Parse result using the adapter
+          const result = adapter.parseResult(acaResult.success ? 0 : 1, acaResult.logs);
+          await taskService.updateTaskResult(taskId, result.summary, result.error);
+
+          // Persist cost data
+          const costFields: Record<string, unknown> = {};
+          if (result.costUsd != null) costFields.costUsd = String(result.costUsd);
+          if (result.inputTokens != null) costFields.inputTokens = result.inputTokens;
+          if (result.outputTokens != null) costFields.outputTokens = result.outputTokens;
+          if (result.model) costFields.modelUsed = result.model;
+          if (Object.keys(costFields).length > 0) {
+            await db.update(tasks).set(costFields).where(eq(tasks.id, taskId));
+          }
+
+          // Check for PR URL — prefer live-polling capture, fall back to log re-scan
+          let detectedPrUrl: string | undefined;
+          const taskRepo = parseRepoUrl(task.repoUrl);
+          // Validate live-captured URL against this task's repo
+          if (acaResult.prUrl) {
+            const parsed = parsePrUrl(acaResult.prUrl);
+            if (
+              parsed &&
+              taskRepo &&
+              parsed.owner.toLowerCase() === taskRepo.owner.toLowerCase() &&
+              parsed.repo.toLowerCase() === taskRepo.repo.toLowerCase()
+            ) {
+              detectedPrUrl = acaResult.prUrl;
+            }
+          }
+          if (!detectedPrUrl) {
+            const prUrlPattern =
+              /https:\/\/(?![\w.-]+\/api\/)[^\s"]+\/(?:pull\/\d+|-\/merge_requests\/\d+)/g;
+            const prMatches = acaResult.logs.match(prUrlPattern);
+            if (prMatches) {
+              for (const url of prMatches) {
+                const parsed = parsePrUrl(url);
+                if (
+                  parsed &&
+                  taskRepo &&
+                  parsed.owner.toLowerCase() === taskRepo.owner.toLowerCase() &&
+                  parsed.repo.toLowerCase() === taskRepo.repo.toLowerCase()
+                ) {
+                  detectedPrUrl = url;
+                }
+              }
+            }
+          }
+
+          // Transition based on result
+          if (detectedPrUrl && !isReviewTask) {
+            await taskService.updateTaskPr(taskId, detectedPrUrl);
+            await taskService.transitionTask(
+              taskId,
+              TaskState.PR_OPENED,
+              "pr_detected",
+              detectedPrUrl,
+            );
+            log.info({ prUrl: detectedPrUrl }, "PR opened (ACA)");
+          } else if (isReviewTask && detectedPrUrl && detectedPrUrl !== task.prUrl) {
+            // Review agent created a new fix PR (different from the PR being reviewed)
+            await taskService.updateTaskPr(taskId, detectedPrUrl);
+            await taskService.transitionTask(
+              taskId,
+              TaskState.PR_OPENED,
+              "pr_detected",
+              detectedPrUrl,
+            );
+            log.info({ prUrl: detectedPrUrl }, "Review task created fix PR (ACA)");
+          } else if (acaResult.success || isReviewTask) {
+            await taskService.transitionTask(
+              taskId,
+              TaskState.COMPLETED,
+              "agent_success",
+              result.summary,
+            );
+            log.info("Task completed (ACA)");
+          } else {
+            await taskService.transitionTask(
+              taskId,
+              TaskState.FAILED,
+              "agent_failure",
+              result.error,
+            );
+            log.warn({ error: result.error }, "Task failed (ACA)");
+          }
+
+          // Handle subtasks and dependencies (same as K8s path)
+          const completedTask = await taskService.getTask(taskId);
+          if (completedTask?.parentTaskId) {
+            const { onSubtaskComplete } = await import("../services/subtask-service.js");
+            await onSubtaskComplete(taskId).catch((err) =>
+              log.warn({ err }, "Failed to check parent subtask status"),
+            );
+          }
+          if (completedTask) {
+            const depSvc = await import("../services/dependency-service.js");
+            if (
+              completedTask.state === TaskState.COMPLETED ||
+              completedTask.state === TaskState.PR_OPENED
+            ) {
+              await depSvc
+                .onDependencyComplete(taskId)
+                .catch((err) => log.warn({ err }, "Failed to process dependency completions"));
+            } else if (completedTask.state === TaskState.FAILED) {
+              await depSvc
+                .cascadeFailure(taskId)
+                .catch((err) => log.warn({ err }, "Failed to cascade failure to dependents"));
+            }
+            if (completedTask.workflowRunId) {
+              const { checkWorkflowRunCompletion } =
+                await import("../services/workflow-service.js");
+              await checkWorkflowRunCompletion(completedTask.workflowRunId).catch((err) =>
+                log.warn({ err }, "Failed to update workflow run status"),
+              );
+            }
+          }
+          return;
+        }
+
+        // ── K8s runtime: pod-per-repo execution path ─────────────────
         // Get or create a repo pod (with multi-pod scheduling)
         log.info("Getting repo pod");
         const isRetry = (task.retryCount ?? 0) > 0;
@@ -838,6 +995,19 @@ export function startTaskWorker() {
             detectedPrUrl,
           );
           log.info({ prUrl: detectedPrUrl }, "PR opened");
+        } else if (isReviewTask && detectedPrUrl && detectedPrUrl !== task.prUrl) {
+          // Review agent created a new fix PR (different from the PR being reviewed)
+          if (detectedPrUrl !== taskAfterExec?.prUrl) {
+            await taskService.updateTaskPr(taskId, detectedPrUrl);
+          }
+          await repoPool.updateWorktreeState(taskId, "preserved");
+          await taskService.transitionTask(
+            taskId,
+            TaskState.PR_OPENED,
+            "pr_detected",
+            detectedPrUrl,
+          );
+          log.info({ prUrl: detectedPrUrl }, "Review task created fix PR");
         } else if (result.success || isReviewTask) {
           // For pr_review tasks, parse the structured review output before cleanup
           if (task.taskType === "pr_review") {
@@ -1055,7 +1225,32 @@ export async function reconcileOrphanedTasks() {
   // Provisioning/running tasks lost their exec session.
   // Before failing and re-queuing, check if a PR was already opened —
   // if so, transition directly to pr_opened to avoid redoing work.
+  // For ACA tasks, also check if the ACA Job is still running — if so,
+  // leave the task alone and re-enqueue the BullMQ job to re-attach polling.
+  const isAcaRuntime = process.env.OPTIO_RUNTIME === "aca";
   for (const task of [...orphanedProvisioning, ...orphanedRunning]) {
+    // In ACA mode, check if the ACA Job is still running before failing
+    if (isAcaRuntime && task.state === "running") {
+      try {
+        const { checkAcaJobStatus } = await import("../services/aca-task-service.js");
+        const acaStatus = await checkAcaJobStatus(task.id);
+        if (acaStatus?.running) {
+          logger.info(
+            { taskId: task.id, acaStatus: acaStatus.status },
+            "ACA Job still running — skipping reconcile, re-enqueuing BullMQ job to re-attach",
+          );
+          // Don't fail the task — just re-enqueue a BullMQ job so the worker
+          // can pick it up. The task is already in "running" state, so the
+          // worker will need to handle re-attachment. For now, leave it alone
+          // and let the ACA Job finish on its own. The next reconcile cycle
+          // will finalize it once the job completes.
+          continue;
+        }
+      } catch {
+        // ACA runtime not available or API error — fall through to normal reconcile
+      }
+    }
+
     const taskWsId = task.workspaceId ?? null;
     const isReview = task.taskType === "review";
     let existingPr = null;

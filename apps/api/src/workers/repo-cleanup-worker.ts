@@ -63,6 +63,13 @@ export function startRepoCleanupWorker() {
   const worker = new Worker(
     "repo-cleanup",
     async () => {
+      // ACA runtime: skip K8s pod health checks — ACA manages job lifecycle.
+      // Only run session cleanup and stall detection.
+      if (process.env.OPTIO_RUNTIME === "aca") {
+        await cleanupExpiredSessions();
+        return;
+      }
+
       const rt = getRuntime();
       const pods = await db.select().from(repoPods);
 

@@ -21,6 +21,7 @@
     "@kubernetes/client-node": "^1.4.0",
     "@optio/agent-adapters": "workspace:*",
     "@optio/container-runtime": "workspace:*",
+    "@optio/container-runtime-aca": "workspace:*",
     "@optio/shared": "workspace:*",
     "@optio/ticket-providers": "workspace:*",
     "bullmq": "^5.52.2",
