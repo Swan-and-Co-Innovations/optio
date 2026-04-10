@@ -578,16 +578,31 @@ export function startTaskWorker() {
               detectedPrUrl,
             );
             log.info({ prUrl: detectedPrUrl }, "PR opened (ACA)");
-          } else if (isReviewTask && detectedPrUrl && detectedPrUrl !== task.prUrl) {
-            // Review agent created a new fix PR (different from the PR being reviewed)
-            await taskService.updateTaskPr(taskId, detectedPrUrl);
-            await taskService.transitionTask(
-              taskId,
-              TaskState.PR_OPENED,
-              "pr_detected",
-              detectedPrUrl,
-            );
-            log.info({ prUrl: detectedPrUrl }, "Review task created fix PR (ACA)");
+          } else if (isReviewTask && detectedPrUrl) {
+            // Check if the review agent created a genuinely new/different PR.
+            // Re-read the task to get the current prUrl (may have been set during execution),
+            // since task.prUrl from job start can be null and cause a false mismatch.
+            const currentTask = await taskService.getTask(taskId);
+            const currentPrUrl = currentTask?.prUrl ?? task.prUrl;
+            if (detectedPrUrl !== currentPrUrl) {
+              await taskService.updateTaskPr(taskId, detectedPrUrl);
+              await taskService.transitionTask(
+                taskId,
+                TaskState.PR_OPENED,
+                "pr_detected",
+                detectedPrUrl,
+              );
+              log.info({ prUrl: detectedPrUrl }, "Review task created fix PR (ACA)");
+            } else {
+              // Same PR as being reviewed — review is done, complete the task
+              await taskService.transitionTask(
+                taskId,
+                TaskState.COMPLETED,
+                "agent_success",
+                result.summary,
+              );
+              log.info("Review task completed (ACA)");
+            }
           } else if (acaResult.success || isReviewTask) {
             await taskService.transitionTask(
               taskId,
@@ -995,8 +1010,15 @@ export function startTaskWorker() {
             detectedPrUrl,
           );
           log.info({ prUrl: detectedPrUrl }, "PR opened");
-        } else if (isReviewTask && detectedPrUrl && detectedPrUrl !== task.prUrl) {
-          // Review agent created a new fix PR (different from the PR being reviewed)
+        } else if (
+          isReviewTask &&
+          detectedPrUrl &&
+          detectedPrUrl !== (taskAfterExec?.prUrl ?? task.prUrl)
+        ) {
+          // Review agent created a new fix PR (different from the PR being reviewed).
+          // Compare against taskAfterExec.prUrl first — the parent's PR URL may have
+          // been written to this task during execution (e.g. by the streaming parser),
+          // so task.prUrl (from job start) can be stale/null and cause a false mismatch.
           if (detectedPrUrl !== taskAfterExec?.prUrl) {
             await taskService.updateTaskPr(taskId, detectedPrUrl);
           }
@@ -1581,8 +1603,9 @@ export function inferExitCode(agentType: string, logs: string): number {
       const hasDeploymentError =
         /DeploymentNotFound|deployment.*not.*found|resource.*not.*found/i.test(logs);
       const hasQuotaError = /quota|rate.?limit|throttl|429|too many requests/i.test(logs);
-      const hasContentFilter =
-        /content.?filter|content.?policy|ResponsibleAIPolicyViolation/i.test(logs);
+      const hasContentFilter = /content.?filter|content.?policy|ResponsibleAIPolicyViolation/i.test(
+        logs,
+      );
       return hasErrorEvent ||
         hasApiErrorEnvelope ||
         hasAuthError ||

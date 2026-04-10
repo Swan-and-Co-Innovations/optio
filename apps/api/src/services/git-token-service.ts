@@ -21,10 +21,11 @@ export async function getGitToken(
   context: GitTokenContext,
 ): Promise<string> {
   if (platform === "github") {
-    if (context.server) return getGitHubToken({ server: true });
+    // Always forward workspaceId so workspace-scoped secrets are found
+    if (context.server) return getGitHubToken({ server: true, workspaceId: context.workspaceId });
     if (context.userId)
       return getGitHubToken({ userId: context.userId, workspaceId: context.workspaceId });
-    return getGitHubToken({ server: true });
+    return getGitHubToken({ server: true, workspaceId: context.workspaceId });
   }
 
   // GitLab: try user-scoped token, then workspace/global GITLAB_TOKEN

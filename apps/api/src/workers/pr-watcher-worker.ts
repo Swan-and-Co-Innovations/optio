@@ -158,7 +158,7 @@ export function startPrWatcherWorker() {
         repoUrl: string,
         context: GitTokenContext,
       ): Promise<{ platform: GitPlatform; ri: RepoIdentifier } | null> {
-        const key = `${repoUrl}::${context.userId ?? "server"}`;
+        const key = `${repoUrl}::${context.userId ?? "server"}::${context.workspaceId ?? "global"}`;
         const cached = platformCache.get(key);
         if (cached) return cached;
         try {
@@ -192,9 +192,11 @@ export function startPrWatcherWorker() {
             const { prNumber } = parsed;
             const prLabel = parsed.platform === "gitlab" ? "MR" : "PR";
 
-            // Get platform instance for this repo (cached per poll cycle)
+            // Get platform instance for this repo (cached per poll cycle).
+            // Pass workspaceId so workspace-scoped secrets (e.g. GITHUB_TOKEN) are found.
             const platformResult = await getCachedPlatform(task.repoUrl, {
               userId: task.createdBy ?? undefined,
+              workspaceId: task.workspaceId,
             });
             if (!platformResult) continue;
             const { platform, ri } = platformResult;
