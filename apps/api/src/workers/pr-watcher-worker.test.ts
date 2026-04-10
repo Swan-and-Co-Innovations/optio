@@ -211,15 +211,27 @@ describe("determinePrAction", () => {
     ).toEqual({ action: "auto_merge" });
   });
 
-  it("auto-merges when no CI checks and autoMerge on", () => {
+  it("auto-merges when no CI checks confirmed on prior poll and autoMerge on", () => {
     expect(
       determinePrAction({
         ...defaults,
         checksStatus: "none",
+        prevChecksStatus: "none", // seen "none" before — genuinely no checks
         autoMerge: true,
         blockingSubtasksComplete: true,
       }),
     ).toEqual({ action: "auto_merge" });
+  });
+
+  it("does not auto-merge on first poll when checks are 'none' (may not have started yet)", () => {
+    const result = determinePrAction({
+      ...defaults,
+      checksStatus: "none",
+      prevChecksStatus: null, // first poll — checks may not have registered yet
+      autoMerge: true,
+      blockingSubtasksComplete: true,
+    });
+    expect(result.action).not.toBe("auto_merge");
   });
 
   it("does not auto-merge when blocking subtasks pending", () => {

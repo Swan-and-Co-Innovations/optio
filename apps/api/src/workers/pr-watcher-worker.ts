@@ -125,8 +125,14 @@ export function determinePrAction(opts: {
     return { action: "launch_review" };
   }
 
-  // Auto-merge: CI passing (or no checks) + subtasks done + autoMerge enabled
-  const checksOk = opts.checksStatus === "passing" || opts.checksStatus === "none";
+  // Auto-merge: CI passing (or genuinely no checks) + subtasks done + autoMerge enabled.
+  // "none" means no check runs exist. On the first poll (prevChecksStatus === null),
+  // this could mean checks haven't been registered yet — don't auto-merge immediately.
+  // Only treat "none" as ok if we've seen it on a prior poll too, confirming there
+  // really are no checks configured for this PR.
+  const checksOk =
+    opts.checksStatus === "passing" ||
+    (opts.checksStatus === "none" && opts.prevChecksStatus !== null);
   if (checksOk && opts.prState === "open" && opts.autoMerge && !opts.cautiousMode) {
     if (opts.blockingSubtasksComplete) return { action: "auto_merge" };
   }
