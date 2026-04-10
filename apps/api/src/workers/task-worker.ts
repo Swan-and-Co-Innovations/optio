@@ -600,24 +600,46 @@ export function startTaskWorker() {
                 detectedPrUrl,
               );
               log.info({ prUrl: detectedPrUrl, originalPrUrl }, "Review task created fix PR (ACA)");
+            } else if (task.taskType === "pr_review") {
+              // Standalone pr_review task reviewed the same PR — transition to
+              // pr_opened so the PR watcher tracks CI status and auto-merges.
+              await taskService.transitionTask(
+                taskId,
+                TaskState.PR_OPENED,
+                "review_complete",
+                detectedPrUrl,
+              );
+              log.info("PR review complete — tracking PR for CI/merge (ACA)");
             } else {
-              // Same PR as being reviewed — review is done, complete the task
+              // Review subtask reviewed parent's PR — complete the subtask
               await taskService.transitionTask(
                 taskId,
                 TaskState.COMPLETED,
                 "agent_success",
                 result.summary,
               );
-              log.info("Review task completed (ACA)");
+              log.info("Review subtask completed (ACA)");
             }
           } else if (acaResult.success || isReviewTask) {
-            await taskService.transitionTask(
-              taskId,
-              TaskState.COMPLETED,
-              "agent_success",
-              result.summary,
-            );
-            log.info("Task completed (ACA)");
+            // For standalone pr_review tasks with no detected PR URL,
+            // still go to pr_opened if the task has a PR from metadata
+            if (task.taskType === "pr_review" && task.prUrl) {
+              await taskService.transitionTask(
+                taskId,
+                TaskState.PR_OPENED,
+                "review_complete",
+                task.prUrl,
+              );
+              log.info("PR review complete — tracking PR for CI/merge (ACA)");
+            } else {
+              await taskService.transitionTask(
+                taskId,
+                TaskState.COMPLETED,
+                "agent_success",
+                result.summary,
+              );
+              log.info("Task completed (ACA)");
+            }
           } else {
             await taskService.transitionTask(
               taskId,
@@ -1041,16 +1063,25 @@ export function startTaskWorker() {
               detectedPrUrl,
             );
             log.info({ prUrl: detectedPrUrl, originalPrUrl }, "Review task created fix PR");
-          } else {
-            // Same PR as being reviewed — complete the review task
-            if (task.taskType === "pr_review") {
-              try {
-                const { parseReviewOutput } = await import("../services/pr-review-service.js");
-                await parseReviewOutput(taskId);
-              } catch (err) {
-                log.warn({ err }, "Failed to parse pr_review output — draft may need manual editing");
-              }
+          } else if (task.taskType === "pr_review") {
+            // Standalone pr_review task reviewed the same PR — transition to
+            // pr_opened so the PR watcher tracks CI status and auto-merges.
+            try {
+              const { parseReviewOutput } = await import("../services/pr-review-service.js");
+              await parseReviewOutput(taskId);
+            } catch (err) {
+              log.warn({ err }, "Failed to parse pr_review output — draft may need manual editing");
             }
+            await repoPool.updateWorktreeState(taskId, "preserved");
+            await taskService.transitionTask(
+              taskId,
+              TaskState.PR_OPENED,
+              "review_complete",
+              detectedPrUrl,
+            );
+            log.info("PR review complete — tracking PR for CI/merge");
+          } else {
+            // Review subtask reviewed parent's PR — complete the subtask
             await repoPool.updateWorktreeState(taskId, "removed");
             await taskService.transitionTask(
               taskId,
@@ -1058,10 +1089,11 @@ export function startTaskWorker() {
               "agent_success",
               result.summary,
             );
-            log.info("Review task completed");
+            log.info("Review subtask completed");
           }
         } else if (result.success || isReviewTask) {
-          // For pr_review tasks, parse the structured review output before cleanup
+          // For standalone pr_review tasks with no detected PR URL,
+          // still go to pr_opened if the task has a PR from metadata
           if (task.taskType === "pr_review") {
             try {
               const { parseReviewOutput } = await import("../services/pr-review-service.js");
@@ -1069,15 +1101,36 @@ export function startTaskWorker() {
             } catch (err) {
               log.warn({ err }, "Failed to parse pr_review output — draft may need manual editing");
             }
+            const prUrlForTracking = taskAfterExec?.prUrl ?? task.prUrl;
+            if (prUrlForTracking) {
+              await repoPool.updateWorktreeState(taskId, "preserved");
+              await taskService.transitionTask(
+                taskId,
+                TaskState.PR_OPENED,
+                "review_complete",
+                prUrlForTracking,
+              );
+              log.info("PR review complete — tracking PR for CI/merge");
+            } else {
+              await repoPool.updateWorktreeState(taskId, "removed");
+              await taskService.transitionTask(
+                taskId,
+                TaskState.COMPLETED,
+                "agent_success",
+                result.summary,
+              );
+              log.info("PR review completed (no PR to track)");
+            }
+          } else {
+            await repoPool.updateWorktreeState(taskId, "removed");
+            await taskService.transitionTask(
+              taskId,
+              TaskState.COMPLETED,
+              "agent_success",
+              result.summary,
+            );
+            log.info("Task completed");
           }
-          await repoPool.updateWorktreeState(taskId, "removed");
-          await taskService.transitionTask(
-            taskId,
-            TaskState.COMPLETED,
-            "agent_success",
-            result.summary,
-          );
-          log.info("Task completed");
         } else {
           await repoPool.updateWorktreeState(taskId, "dirty");
           await taskService.transitionTask(taskId, TaskState.FAILED, "agent_failure", result.error);

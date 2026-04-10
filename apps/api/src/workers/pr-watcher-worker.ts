@@ -64,6 +64,7 @@ export function determinePrAction(opts: {
   hasReviewSubtask: boolean;
   blockingSubtasksComplete: boolean;
   taskState: string;
+  taskType?: string | null;
 }): { action: string; detail?: string } {
   // PR merged
   if (opts.prMerged) return { action: "complete", detail: "pr_merged" };
@@ -99,13 +100,15 @@ export function determinePrAction(opts: {
   }
 
   // CI just passed — trigger review if configured
+  // Skip for pr_review tasks — they ARE the review, don't launch recursive reviews
   if (
     opts.checksStatus === "passing" &&
     opts.prevChecksStatus !== "passing" &&
     opts.prState === "open" &&
     opts.reviewEnabled &&
     opts.reviewTrigger === "on_ci_pass" &&
-    !opts.hasReviewSubtask
+    !opts.hasReviewSubtask &&
+    opts.taskType !== "pr_review"
   ) {
     return { action: "launch_review" };
   }
@@ -116,7 +119,8 @@ export function determinePrAction(opts: {
     opts.prState === "open" &&
     opts.reviewEnabled &&
     opts.reviewTrigger === "on_pr" &&
-    !opts.hasReviewSubtask
+    !opts.hasReviewSubtask &&
+    opts.taskType !== "pr_review"
   ) {
     return { action: "launch_review" };
   }
@@ -173,12 +177,13 @@ export function startPrWatcherWorker() {
       // --- Task PR watching ---
       // Find all tasks with open PRs
       // Watch pr_opened tasks + failed tasks that have a PR (may need auto-merge after CI fix)
-      // Only watch coding tasks, NOT review subtasks (avoid recursive reviews)
+      // Watch coding tasks AND standalone pr_review tasks (which create fix PRs).
+      // Exclude review subtasks (taskType='review' with parentTaskId) to avoid recursive reviews.
       const openPrTasks = await db
         .select()
         .from(tasks)
         .where(
-          sql`${tasks.state} IN ('pr_opened', 'failed') AND ${tasks.prUrl} IS NOT NULL AND (${tasks.taskType} = 'coding' OR ${tasks.taskType} IS NULL)`,
+          sql`${tasks.state} IN ('pr_opened', 'failed') AND ${tasks.prUrl} IS NOT NULL AND (${tasks.taskType} = 'coding' OR ${tasks.taskType} = 'pr_review' OR ${tasks.taskType} IS NULL)`,
         );
 
       if (openPrTasks.length > 0) {
@@ -275,6 +280,7 @@ export function startPrWatcherWorker() {
               hasReviewSubtask: existingReview.length > 0,
               blockingSubtasksComplete: subtaskStatus.allComplete,
               taskState: task.state,
+              taskType: task.taskType,
             });
 
             // --- Execute the action ---
