@@ -580,11 +580,18 @@ export function startTaskWorker() {
             log.info({ prUrl: detectedPrUrl }, "PR opened (ACA)");
           } else if (isReviewTask && detectedPrUrl) {
             // Check if the review agent created a genuinely new/different PR.
-            // Re-read the task to get the current prUrl (may have been set during execution),
-            // since task.prUrl from job start can be null and cause a false mismatch.
-            const currentTask = await taskService.getTask(taskId);
-            const currentPrUrl = currentTask?.prUrl ?? task.prUrl;
-            if (detectedPrUrl !== currentPrUrl) {
+            // Compare against the ORIGINAL PR being reviewed, not the task's
+            // own prUrl (which the streaming parser may have already overwritten
+            // with the new PR URL during execution).
+            // For pr_review tasks: metadata.prUrl holds the original PR.
+            // For review subtasks: the parent task's prUrl is the original.
+            const originalPrUrl =
+              (task.metadata as Record<string, unknown>)?.prUrl as string | undefined ??
+              (task.parentTaskId
+                ? (await taskService.getTask(task.parentTaskId))?.prUrl
+                : null) ??
+              task.prUrl; // last resort fallback
+            if (detectedPrUrl !== originalPrUrl) {
               await taskService.updateTaskPr(taskId, detectedPrUrl);
               await taskService.transitionTask(
                 taskId,
@@ -592,7 +599,7 @@ export function startTaskWorker() {
                 "pr_detected",
                 detectedPrUrl,
               );
-              log.info({ prUrl: detectedPrUrl }, "Review task created fix PR (ACA)");
+              log.info({ prUrl: detectedPrUrl, originalPrUrl }, "Review task created fix PR (ACA)");
             } else {
               // Same PR as being reviewed — review is done, complete the task
               await taskService.transitionTask(
@@ -1010,26 +1017,49 @@ export function startTaskWorker() {
             detectedPrUrl,
           );
           log.info({ prUrl: detectedPrUrl }, "PR opened");
-        } else if (
-          isReviewTask &&
-          detectedPrUrl &&
-          detectedPrUrl !== (taskAfterExec?.prUrl ?? task.prUrl)
-        ) {
-          // Review agent created a new fix PR (different from the PR being reviewed).
-          // Compare against taskAfterExec.prUrl first — the parent's PR URL may have
-          // been written to this task during execution (e.g. by the streaming parser),
-          // so task.prUrl (from job start) can be stale/null and cause a false mismatch.
-          if (detectedPrUrl !== taskAfterExec?.prUrl) {
-            await taskService.updateTaskPr(taskId, detectedPrUrl);
+        } else if (isReviewTask && detectedPrUrl) {
+          // Check if the review agent created a genuinely new/different PR.
+          // Compare against the ORIGINAL PR being reviewed, not the task's
+          // own prUrl (which the streaming parser overwrites during execution).
+          // For pr_review tasks: metadata.prUrl holds the original PR.
+          // For review subtasks: the parent task's prUrl is the original.
+          const originalPrUrl =
+            (task.metadata as Record<string, unknown>)?.prUrl as string | undefined ??
+            (task.parentTaskId
+              ? (await taskService.getTask(task.parentTaskId))?.prUrl
+              : null) ??
+            task.prUrl; // last resort fallback
+          if (detectedPrUrl !== originalPrUrl) {
+            if (detectedPrUrl !== taskAfterExec?.prUrl) {
+              await taskService.updateTaskPr(taskId, detectedPrUrl);
+            }
+            await repoPool.updateWorktreeState(taskId, "preserved");
+            await taskService.transitionTask(
+              taskId,
+              TaskState.PR_OPENED,
+              "pr_detected",
+              detectedPrUrl,
+            );
+            log.info({ prUrl: detectedPrUrl, originalPrUrl }, "Review task created fix PR");
+          } else {
+            // Same PR as being reviewed — complete the review task
+            if (task.taskType === "pr_review") {
+              try {
+                const { parseReviewOutput } = await import("../services/pr-review-service.js");
+                await parseReviewOutput(taskId);
+              } catch (err) {
+                log.warn({ err }, "Failed to parse pr_review output — draft may need manual editing");
+              }
+            }
+            await repoPool.updateWorktreeState(taskId, "removed");
+            await taskService.transitionTask(
+              taskId,
+              TaskState.COMPLETED,
+              "agent_success",
+              result.summary,
+            );
+            log.info("Review task completed");
           }
-          await repoPool.updateWorktreeState(taskId, "preserved");
-          await taskService.transitionTask(
-            taskId,
-            TaskState.PR_OPENED,
-            "pr_detected",
-            detectedPrUrl,
-          );
-          log.info({ prUrl: detectedPrUrl }, "Review task created fix PR");
         } else if (result.success || isReviewTask) {
           // For pr_review tasks, parse the structured review output before cleanup
           if (task.taskType === "pr_review") {
