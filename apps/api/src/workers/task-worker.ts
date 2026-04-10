@@ -1609,12 +1609,20 @@ export function buildAgentCommand(
     }
     case "azure-foundry": {
       // Azure Foundry routes through the Codex CLI with OPENAI_BASE_URL pointed
-      // at the Azure OpenAI endpoint. The adapter sets OPENAI_BASE_URL,
-      // OPENAI_API_VERSION, and AZURE_OPENAI_API_VERSION in the env block.
-      // AZURE_FOUNDRY_API_KEY is mapped to OPENAI_API_KEY by the entrypoint.
+      // at the Azure OpenAI endpoint. Set OPENAI_BASE_URL explicitly from the
+      // env dict (populated by the adapter or task worker) since the adapter's
+      // env vars may not propagate to the shell environment.
       const deploymentFlag = env.OPTIO_AZURE_FOUNDRY_DEPLOYMENT
         ? ` --model ${JSON.stringify(env.OPTIO_AZURE_FOUNDRY_DEPLOYMENT)}`
         : "";
+      const endpointSetup = env.OPENAI_BASE_URL
+        ? [`export OPENAI_BASE_URL=${JSON.stringify(env.OPENAI_BASE_URL)}`]
+        : env.OPTIO_AZURE_FOUNDRY_ENDPOINT
+          ? [`export OPENAI_BASE_URL=${JSON.stringify(env.OPTIO_AZURE_FOUNDRY_ENDPOINT)}`]
+          : [];
+      const apiVersionSetup = env.OPENAI_API_VERSION
+        ? [`export OPENAI_API_VERSION=${JSON.stringify(env.OPENAI_API_VERSION)}`]
+        : [];
       const authSetup =
         env.OPTIO_AZURE_FOUNDRY_AUTH_MODE === "managed-identity"
           ? [
@@ -1624,9 +1632,12 @@ export function buildAgentCommand(
             ]
           : [`export OPENAI_API_KEY="$AZURE_FOUNDRY_API_KEY"`];
       return [
+        ...endpointSetup,
+        ...apiVersionSetup,
         ...authSetup,
         `echo "[optio] Running Azure Foundry (Codex CLI → Azure OpenAI)${opts?.isReview ? " (review)" : ""}..."`,
-        `codex exec --full-auto "$OPTIO_PROMPT"${deploymentFlag} --json`,
+        // Pipe /dev/null to stdin — Codex reads stdin by default but ACA has no tty
+        `codex exec --full-auto "$OPTIO_PROMPT"${deploymentFlag} --json < /dev/null`,
       ];
     }
     default:
