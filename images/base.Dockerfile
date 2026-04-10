@@ -47,6 +47,9 @@ RUN curl -fsSL https://opencode.ai/install | bash \
   && mv /root/.opencode/bin/opencode /usr/local/bin/ \
   && rm -rf /root/.opencode
 
+# OpenAI Codex CLI (used by azure-foundry adapter for Azure OpenAI models)
+RUN npm install -g @openai/codex
+
 # Google Gemini CLI
 RUN npm install -g @google/gemini-cli
 
