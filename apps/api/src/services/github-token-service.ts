@@ -141,6 +141,9 @@ async function getPatFallback(workspaceId?: string | null): Promise<string> {
   try {
     return await retrieveSecretWithFallback("GITHUB_TOKEN", "global", workspaceId);
   } catch {
+    // Fall back to env var (set on the container but not in secrets store)
+    const envToken = process.env.GITHUB_TOKEN;
+    if (envToken) return envToken;
     throw new Error(
       "No GitHub token available. Configure a GitHub App (recommended) or add a GITHUB_TOKEN secret.",
     );

@@ -169,7 +169,8 @@ export function startPrWatcherWorker() {
           const result = await getGitPlatformForRepo(repoUrl, context);
           platformCache.set(key, result);
           return result;
-        } catch {
+        } catch (err) {
+          logger.warn({ err, repoUrl, userId: context.userId }, "Failed to get git platform for repo");
           return null;
         }
       }
