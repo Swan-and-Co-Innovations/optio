@@ -257,6 +257,20 @@ export function startTaskWorker() {
                 taskWorkspaceId,
               ).catch(() => null)) as any) ?? undefined)
             : undefined;
+        // Azure Foundry config — resolve from secrets store
+        const azureFoundryEndpoint =
+          (await retrieveSecretWithFallback("AZURE_FOUNDRY_ENDPOINT", "global", taskWorkspaceId).catch(
+            () => null,
+          )) as string | null ?? undefined;
+        const azureFoundryDeployment =
+          (await retrieveSecretWithFallback("AZURE_FOUNDRY_DEPLOYMENT", "global", taskWorkspaceId).catch(
+            () => null,
+          )) as string | null ?? undefined;
+        const azureFoundryAuthMode =
+          ((await retrieveSecretWithFallback("AZURE_FOUNDRY_AUTH_MODE", "global", taskWorkspaceId).catch(
+            () => null,
+          )) as any) ?? "api-key";
+
         const optioApiUrl = `http://${process.env.API_HOST ?? "host.docker.internal"}:${process.env.API_PORT ?? "4000"}`;
 
         // Load and render prompt template
@@ -327,6 +341,9 @@ export function startTaskWorker() {
           maxTurnsReview: repoConfig?.maxTurnsReview ?? undefined,
           googleCloudProject,
           googleCloudLocation,
+          azureFoundryEndpoint,
+          azureFoundryDeployment,
+          azureFoundryAuthMode,
         });
 
         // ── MCP servers & custom skills injection ────────────────────
