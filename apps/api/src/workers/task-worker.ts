@@ -401,6 +401,20 @@ export function startTaskWorker() {
         );
         const allEnv: Record<string, string> = { ...agentConfig.env, ...resolvedSecrets };
 
+        // Ensure Azure Foundry env vars are set even if the adapter didn't receive them
+        if (task.agentType === "azure-foundry") {
+          if (azureFoundryEndpoint && !allEnv.OPENAI_BASE_URL) {
+            allEnv.OPENAI_BASE_URL = azureFoundryEndpoint;
+            allEnv.OPTIO_AZURE_FOUNDRY_ENDPOINT = azureFoundryEndpoint;
+          }
+          if (azureFoundryDeployment && !allEnv.OPTIO_AZURE_FOUNDRY_DEPLOYMENT) {
+            allEnv.OPTIO_AZURE_FOUNDRY_DEPLOYMENT = azureFoundryDeployment;
+          }
+          if (!allEnv.OPTIO_AZURE_FOUNDRY_AUTH_MODE) {
+            allEnv.OPTIO_AZURE_FOUNDRY_AUTH_MODE = azureFoundryAuthMode;
+          }
+        }
+
         // Resolve git platform tokens (not part of adapter requiredSecrets since they're infra-level)
         for (const secretName of ["GITHUB_TOKEN", "GITLAB_TOKEN", "GITLAB_HOST"]) {
           if (!allEnv[secretName]) {
