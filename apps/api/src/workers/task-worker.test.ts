@@ -217,76 +217,6 @@ describe("buildAgentCommand", () => {
     });
   });
 
-  describe("azure-foundry agent", () => {
-    it("produces a codex exec command routed to Azure OpenAI", () => {
-      const env = {
-        OPTIO_PROMPT: "Build feature",
-        OPTIO_AZURE_FOUNDRY_AUTH_MODE: "api-key",
-        OPTIO_AZURE_FOUNDRY_DEPLOYMENT: "GSD-PI_gpt-5-codex",
-        OPENAI_BASE_URL: "https://test.openai.azure.com/",
-      };
-      const cmds = buildAgentCommand("azure-foundry", env);
-      expect(cmds.some((c) => c.includes("codex exec"))).toBe(true);
-      expect(cmds.some((c) => c.includes("--full-auto"))).toBe(true);
-      expect(cmds.some((c) => c.includes("Azure Foundry"))).toBe(true);
-    });
-
-    it("maps AZURE_FOUNDRY_API_KEY to OPENAI_API_KEY in api-key mode", () => {
-      const env = {
-        OPTIO_PROMPT: "Build feature",
-        OPTIO_AZURE_FOUNDRY_AUTH_MODE: "api-key",
-      };
-      const cmds = buildAgentCommand("azure-foundry", env);
-      expect(cmds.some((c) => c.includes("AZURE_FOUNDRY_API_KEY"))).toBe(true);
-      expect(cmds.some((c) => c.includes("OPENAI_API_KEY"))).toBe(true);
-    });
-
-    it("acquires managed identity token in managed-identity mode", () => {
-      const env = {
-        OPTIO_PROMPT: "Build feature",
-        OPTIO_AZURE_FOUNDRY_AUTH_MODE: "managed-identity",
-      };
-      const cmds = buildAgentCommand("azure-foundry", env);
-      expect(cmds.some((c) => c.includes("managed identity token"))).toBe(true);
-      expect(cmds.some((c) => c.includes("169.254.169.254"))).toBe(true);
-    });
-
-    it("builds Azure Responses API URL from endpoint and deployment", () => {
-      const env = {
-        OPTIO_PROMPT: "Build feature",
-        OPTIO_AZURE_FOUNDRY_AUTH_MODE: "api-key",
-        OPTIO_AZURE_FOUNDRY_DEPLOYMENT: "GSD-PI_gpt-5.3-chat",
-        OPENAI_BASE_URL: "https://test.openai.azure.com/",
-      };
-      const cmds = buildAgentCommand("azure-foundry", env);
-      expect(cmds.some((c) => c.includes("--model"))).toBe(true);
-      expect(cmds.some((c) => c.includes("GSD-PI_gpt-5.3-chat"))).toBe(true);
-      expect(cmds.some((c) => c.includes("OPENAI_BASE_URL"))).toBe(true);
-      expect(cmds.some((c) => c.includes("openai/deployments/GSD-PI_gpt-5.3-chat"))).toBe(true);
-    });
-
-    it("sets OPENAI_BASE_URL from endpoint", () => {
-      const env = {
-        OPTIO_PROMPT: "Build feature",
-        OPTIO_AZURE_FOUNDRY_AUTH_MODE: "api-key",
-        OPENAI_BASE_URL: "https://test.openai.azure.com/",
-        OPTIO_AZURE_FOUNDRY_DEPLOYMENT: "test-deploy",
-      };
-      const cmds = buildAgentCommand("azure-foundry", env);
-      expect(cmds.some((c) => c.includes("OPENAI_BASE_URL"))).toBe(true);
-      expect(cmds.some((c) => c.includes("test.openai.azure.com"))).toBe(true);
-    });
-
-    it("includes review label when isReview is true", () => {
-      const env = {
-        OPTIO_PROMPT: "Review code",
-        OPTIO_AZURE_FOUNDRY_AUTH_MODE: "api-key",
-      };
-      const cmds = buildAgentCommand("azure-foundry", env, { isReview: true });
-      expect(cmds.some((c) => c.includes("(review)"))).toBe(true);
-    });
-  });
-
   describe("unknown agent", () => {
     it("produces an error exit command for unknown agent types", () => {
       const env = { OPTIO_PROMPT: "Do something" };
@@ -396,48 +326,6 @@ describe("inferExitCode", () => {
     it("returns 1 on fatal error", () => {
       const logs = "fatal: repository not found\n";
       expect(inferExitCode("opencode", logs)).toBe(1);
-    });
-  });
-
-  describe("azure-foundry", () => {
-    it("returns 0 for clean logs", () => {
-      const logs = '{"type":"message","content":"Done"}\n';
-      expect(inferExitCode("azure-foundry", logs)).toBe(0);
-    });
-
-    it("returns 1 when error event is present", () => {
-      const logs = '{"type":"error","message":"something broke"}\n';
-      expect(inferExitCode("azure-foundry", logs)).toBe(1);
-    });
-
-    it("returns 1 on AZURE_FOUNDRY_API_KEY auth error", () => {
-      const logs = "Error: AZURE_FOUNDRY_API_KEY is not set\n";
-      expect(inferExitCode("azure-foundry", logs)).toBe(1);
-    });
-
-    it("returns 1 on DeploymentNotFound error", () => {
-      const logs = "DeploymentNotFound: The deployment does not exist\n";
-      expect(inferExitCode("azure-foundry", logs)).toBe(1);
-    });
-
-    it("returns 1 on rate limit / 429 error", () => {
-      const logs = "Error: 429 Too Many Requests — rate limit exceeded\n";
-      expect(inferExitCode("azure-foundry", logs)).toBe(1);
-    });
-
-    it("returns 1 on content filter violation", () => {
-      const logs = "ResponsibleAIPolicyViolation: content_filter triggered\n";
-      expect(inferExitCode("azure-foundry", logs)).toBe(1);
-    });
-
-    it("returns 1 on managed identity auth failure", () => {
-      const logs = "Error: failed to acquire token via managed identity\n";
-      expect(inferExitCode("azure-foundry", logs)).toBe(1);
-    });
-
-    it("returns 1 on Azure OpenAI deployment not found error", () => {
-      const logs = "Error: The deployment 'GSD-PI_test' was not found\n";
-      expect(inferExitCode("azure-foundry", logs)).toBe(1);
     });
   });
 

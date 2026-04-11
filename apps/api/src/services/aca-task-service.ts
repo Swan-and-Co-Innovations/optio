@@ -399,13 +399,6 @@ function buildAcaAgentScript(
     "  (cd /workspace/repo && timeout 120 code-review-graph init . 2>/dev/null; timeout 120 code-review-graph build . 2>&1) || echo '[optio-aca] code-review-graph failed (non-fatal)'",
     "fi",
 
-    // Verify agent CLI is available before running
-    `echo "[optio-aca] Agent type: ${env.OPTIO_AGENT_TYPE ?? "unknown"}"`,
-    `if [ "${env.OPTIO_AGENT_TYPE ?? ""}" = "azure-foundry" ] && ! command -v codex >/dev/null 2>&1; then`,
-    '  echo "[optio-aca] ERROR: codex CLI not found in image. Rebuild agent image with @openai/codex." >&2',
-    "  exit 1",
-    "fi",
-
     // Run the agent — use set +e so we capture the exit code instead of aborting
     'echo "[optio-aca] Running agent..."',
     `export OPTIO_TASK_ID="${taskId}"`,

@@ -12,7 +12,7 @@ const createTemplateSchema = z.object({
   name: z.string().min(1),
   repoUrl: z.string().optional(),
   prompt: z.string().min(1),
-  agentType: z.enum(["claude-code", "codex", "copilot", "opencode", "gemini", "azure-foundry"]).optional(),
+  agentType: z.enum(["claude-code", "codex", "copilot", "opencode"]).optional(),
   priority: z.number().int().min(1).max(1000).optional(),
   metadata: z.record(z.unknown()).optional(),
 });
@@ -21,7 +21,7 @@ const updateTemplateSchema = z.object({
   name: z.string().min(1).optional(),
   repoUrl: z.string().nullable().optional(),
   prompt: z.string().min(1).optional(),
-  agentType: z.enum(["claude-code", "codex", "copilot", "opencode", "gemini", "azure-foundry"]).optional(),
+  agentType: z.enum(["claude-code", "codex", "copilot", "opencode"]).optional(),
   priority: z.number().int().min(1).max(1000).optional(),
   metadata: z.record(z.unknown()).optional(),
 });
@@ -34,7 +34,7 @@ const createFromTemplateSchema = z.object({
     .regex(/^[a-zA-Z0-9._\/-]+$/, "Invalid branch name")
     .optional(),
   prompt: z.string().optional(),
-  agentType: z.enum(["claude-code", "codex", "copilot", "opencode", "gemini", "azure-foundry"]).optional(),
+  agentType: z.enum(["claude-code", "codex", "copilot", "opencode"]).optional(),
   priority: z.number().int().min(1).max(1000).optional(),
   maxRetries: z.number().int().min(0).max(10).optional(),
   metadata: z.record(z.unknown()).optional(),

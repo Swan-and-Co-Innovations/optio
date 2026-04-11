@@ -16,7 +16,7 @@ const taskConfigSchema = z.object({
     .string()
     .regex(/^[a-zA-Z0-9._\/-]+$/, "Invalid branch name")
     .optional(),
-  agentType: z.enum(["claude-code", "codex", "copilot", "opencode", "gemini", "azure-foundry"]),
+  agentType: z.enum(["claude-code", "codex", "copilot", "opencode"]),
   maxRetries: z.number().int().min(0).max(10).optional(),
   priority: z.number().int().min(1).max(1000).optional(),
 });

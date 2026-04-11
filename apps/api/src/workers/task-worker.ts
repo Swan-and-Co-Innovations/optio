@@ -257,20 +257,6 @@ export function startTaskWorker() {
                 taskWorkspaceId,
               ).catch(() => null)) as any) ?? undefined)
             : undefined;
-        // Azure Foundry config — resolve from secrets store
-        const azureFoundryEndpoint =
-          (await retrieveSecretWithFallback("AZURE_FOUNDRY_ENDPOINT", "global", taskWorkspaceId).catch(
-            () => null,
-          )) as string | null ?? undefined;
-        const azureFoundryDeployment =
-          (await retrieveSecretWithFallback("AZURE_FOUNDRY_DEPLOYMENT", "global", taskWorkspaceId).catch(
-            () => null,
-          )) as string | null ?? undefined;
-        const azureFoundryAuthMode =
-          ((await retrieveSecretWithFallback("AZURE_FOUNDRY_AUTH_MODE", "global", taskWorkspaceId).catch(
-            () => null,
-          )) as any) ?? "api-key";
-
         const optioApiUrl = `http://${process.env.API_HOST ?? "host.docker.internal"}:${process.env.API_PORT ?? "4000"}`;
 
         // Load and render prompt template
@@ -341,9 +327,6 @@ export function startTaskWorker() {
           maxTurnsReview: repoConfig?.maxTurnsReview ?? undefined,
           googleCloudProject,
           googleCloudLocation,
-          azureFoundryEndpoint,
-          azureFoundryDeployment,
-          azureFoundryAuthMode,
         });
 
         // ── MCP servers & custom skills injection ────────────────────
@@ -400,20 +383,6 @@ export function startTaskWorker() {
           taskWorkspaceId,
         );
         const allEnv: Record<string, string> = { ...agentConfig.env, ...resolvedSecrets };
-
-        // Ensure Azure Foundry env vars are set even if the adapter didn't receive them
-        if (task.agentType === "azure-foundry") {
-          if (azureFoundryEndpoint && !allEnv.OPENAI_BASE_URL) {
-            allEnv.OPENAI_BASE_URL = azureFoundryEndpoint;
-            allEnv.OPTIO_AZURE_FOUNDRY_ENDPOINT = azureFoundryEndpoint;
-          }
-          if (azureFoundryDeployment && !allEnv.OPTIO_AZURE_FOUNDRY_DEPLOYMENT) {
-            allEnv.OPTIO_AZURE_FOUNDRY_DEPLOYMENT = azureFoundryDeployment;
-          }
-          if (!allEnv.OPTIO_AZURE_FOUNDRY_AUTH_MODE) {
-            allEnv.OPTIO_AZURE_FOUNDRY_AUTH_MODE = azureFoundryAuthMode;
-          }
-        }
 
         // Resolve git platform tokens (not part of adapter requiredSecrets since they're infra-level)
         for (const secretName of ["GITHUB_TOKEN", "GITLAB_TOKEN", "GITLAB_HOST"]) {
@@ -1622,16 +1591,13 @@ export function buildAgentCommand(
       ];
     }
     case "azure-foundry": {
-      // Azure Foundry uses Codex CLI with the OpenAI Responses API pointed at
-      // Azure OpenAI via OPENAI_BASE_URL. Azure OpenAI supports the Responses
-      // API at: {endpoint}/openai/deployments/{deployment}/responses
-      const endpoint = env.OPENAI_BASE_URL ?? env.OPTIO_AZURE_FOUNDRY_ENDPOINT ?? "";
-      const deployment = env.OPTIO_AZURE_FOUNDRY_DEPLOYMENT ?? "";
-      const apiVersion = env.OPENAI_API_VERSION ?? env.AZURE_OPENAI_API_VERSION ?? "2025-03-01-preview";
-      // Build the Azure-specific Responses API URL
-      const azureResponsesUrl = endpoint && deployment
-        ? `${endpoint.replace(/\/$/, "")}/openai/deployments/${deployment}`
-        : endpoint;
+      // Azure Foundry routes through the Codex CLI with OPENAI_BASE_URL pointed
+      // at the Azure OpenAI endpoint. The adapter sets OPENAI_BASE_URL,
+      // OPENAI_API_VERSION, and AZURE_OPENAI_API_VERSION in the env block.
+      // AZURE_FOUNDRY_API_KEY is mapped to OPENAI_API_KEY by the entrypoint.
+      const deploymentFlag = env.OPTIO_AZURE_FOUNDRY_DEPLOYMENT
+        ? ` --model ${JSON.stringify(env.OPTIO_AZURE_FOUNDRY_DEPLOYMENT)}`
+        : "";
       const authSetup =
         env.OPTIO_AZURE_FOUNDRY_AUTH_MODE === "managed-identity"
           ? [
@@ -1641,13 +1607,9 @@ export function buildAgentCommand(
             ]
           : [`export OPENAI_API_KEY="$AZURE_FOUNDRY_API_KEY"`];
       return [
-        `echo "[optio] Azure Foundry: endpoint=${endpoint} deployment=${deployment} api-version=${apiVersion}"`,
-        `export OPENAI_BASE_URL=${JSON.stringify(azureResponsesUrl)}`,
-        `export OPENAI_API_VERSION=${JSON.stringify(apiVersion)}`,
-        `export AZURE_OPENAI_API_VERSION=${JSON.stringify(apiVersion)}`,
         ...authSetup,
         `echo "[optio] Running Azure Foundry (Codex CLI → Azure OpenAI)${opts?.isReview ? " (review)" : ""}..."`,
-        `codex exec --full-auto "$OPTIO_PROMPT" --model ${JSON.stringify(deployment || "gpt-5-codex")} --json < /dev/null`,
+        `codex exec --full-auto "$OPTIO_PROMPT"${deploymentFlag} --json`,
       ];
     }
     default:
@@ -1713,7 +1675,8 @@ export function inferExitCode(agentType: string, logs: string): number {
         : 0;
     }
     case "azure-foundry": {
-      // Azure Foundry routes through Codex CLI pointed at Azure OpenAI Responses API
+      // Azure Foundry routes through Codex CLI — same error patterns as codex,
+      // plus Azure-specific deployment/auth errors
       const hasErrorEvent = logs.includes('"type":"error"') || logs.includes('"type": "error"');
       const hasApiErrorEnvelope = /"error"\s*:\s*\{\s*"message"/.test(logs);
       const hasAuthError =
