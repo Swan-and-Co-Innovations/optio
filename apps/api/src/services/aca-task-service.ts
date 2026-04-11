@@ -401,8 +401,8 @@ function buildAcaAgentScript(
 
     // Verify agent CLI is available before running
     `echo "[optio-aca] Agent type: ${env.OPTIO_AGENT_TYPE ?? "unknown"}"`,
-    `if [ "${env.OPTIO_AGENT_TYPE ?? ""}" = "azure-foundry" ] && ! command -v aider >/dev/null 2>&1; then`,
-    '  echo "[optio-aca] ERROR: aider CLI not found in image. Rebuild agent image with aider-chat." >&2',
+    `if [ "${env.OPTIO_AGENT_TYPE ?? ""}" = "azure-foundry" ] && ! command -v codex >/dev/null 2>&1; then`,
+    '  echo "[optio-aca] ERROR: codex CLI not found in image. Rebuild agent image with @openai/codex." >&2',
     "  exit 1",
     "fi",
 

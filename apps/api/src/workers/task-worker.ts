@@ -1622,30 +1622,32 @@ export function buildAgentCommand(
       ];
     }
     case "azure-foundry": {
-      // Azure Foundry uses aider CLI pointed at Azure OpenAI endpoints.
-      // aider natively supports Azure via AZURE_API_KEY, AZURE_API_BASE,
-      // and AZURE_API_VERSION env vars with "azure/<deployment>" model names.
+      // Azure Foundry uses Codex CLI with the OpenAI Responses API pointed at
+      // Azure OpenAI via OPENAI_BASE_URL. Azure OpenAI supports the Responses
+      // API at: {endpoint}/openai/deployments/{deployment}/responses
       const endpoint = env.OPENAI_BASE_URL ?? env.OPTIO_AZURE_FOUNDRY_ENDPOINT ?? "";
       const deployment = env.OPTIO_AZURE_FOUNDRY_DEPLOYMENT ?? "";
-      const apiVersion = env.OPENAI_API_VERSION ?? env.AZURE_OPENAI_API_VERSION ?? "2024-10-21";
-      const modelArg = deployment ? `azure/${deployment}` : "";
+      const apiVersion = env.OPENAI_API_VERSION ?? env.AZURE_OPENAI_API_VERSION ?? "2025-03-01-preview";
+      // Build the Azure-specific Responses API URL
+      const azureResponsesUrl = endpoint && deployment
+        ? `${endpoint.replace(/\/$/, "")}/openai/deployments/${deployment}`
+        : endpoint;
       const authSetup =
         env.OPTIO_AZURE_FOUNDRY_AUTH_MODE === "managed-identity"
           ? [
               `echo "[optio] Acquiring Azure managed identity token..."`,
-              `export AZURE_API_KEY=$(curl -sf -H "Metadata: true" "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://cognitiveservices.azure.com/" | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null || echo "")`,
-              `if [ -z "$AZURE_API_KEY" ]; then echo "[optio] WARNING: Failed to acquire managed identity token" >&2; fi`,
+              `export OPENAI_API_KEY=$(curl -sf -H "Metadata: true" "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://cognitiveservices.azure.com/" | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null || echo "")`,
+              `if [ -z "$OPENAI_API_KEY" ]; then echo "[optio] WARNING: Failed to acquire managed identity token" >&2; fi`,
             ]
-          : [`export AZURE_API_KEY="$AZURE_FOUNDRY_API_KEY"`];
+          : [`export OPENAI_API_KEY="$AZURE_FOUNDRY_API_KEY"`];
       return [
-        `echo "[optio] Azure Foundry: endpoint=${endpoint} model=${modelArg} api-version=${apiVersion}"`,
-        `export AZURE_API_BASE=${JSON.stringify(endpoint)}`,
-        `export AZURE_API_VERSION=${JSON.stringify(apiVersion)}`,
+        `echo "[optio] Azure Foundry: endpoint=${endpoint} deployment=${deployment} api-version=${apiVersion}"`,
+        `export OPENAI_BASE_URL=${JSON.stringify(azureResponsesUrl)}`,
+        `export OPENAI_API_VERSION=${JSON.stringify(apiVersion)}`,
+        `export AZURE_OPENAI_API_VERSION=${JSON.stringify(apiVersion)}`,
         ...authSetup,
-        `echo "[optio] Running Azure Foundry (aider → Azure OpenAI)${opts?.isReview ? " (review)" : ""}..."`,
-        `aider --yes-always --no-git --no-auto-commits --no-suggest-shell-commands \\`,
-        `  --model ${JSON.stringify(modelArg)} \\`,
-        `  --message "$OPTIO_PROMPT" < /dev/null`,
+        `echo "[optio] Running Azure Foundry (Codex CLI → Azure OpenAI)${opts?.isReview ? " (review)" : ""}..."`,
+        `codex exec --full-auto "$OPTIO_PROMPT" --model ${JSON.stringify(deployment || "gpt-5-codex")} --json < /dev/null`,
       ];
     }
     default:
@@ -1711,9 +1713,11 @@ export function inferExitCode(agentType: string, logs: string): number {
         : 0;
     }
     case "azure-foundry": {
-      // Azure Foundry routes through aider CLI with Azure OpenAI endpoints
+      // Azure Foundry routes through Codex CLI pointed at Azure OpenAI Responses API
+      const hasErrorEvent = logs.includes('"type":"error"') || logs.includes('"type": "error"');
+      const hasApiErrorEnvelope = /"error"\s*:\s*\{\s*"message"/.test(logs);
       const hasAuthError =
-        /AZURE_API_KEY|azure.*openai|unauthorized|authentication.*failed|managed.?identity|InvalidApiKey/i.test(
+        /AZURE_FOUNDRY_API_KEY|OPENAI_API_KEY|azure.*openai|unauthorized|authentication.*failed|managed.?identity/i.test(
           logs,
         );
       const hasDeploymentError =
@@ -1722,12 +1726,12 @@ export function inferExitCode(agentType: string, logs: string): number {
       const hasContentFilter = /content.?filter|content.?policy|ResponsibleAIPolicyViolation/i.test(
         logs,
       );
-      const hasAiderError = /Error:|Exception:|Traceback|aider.*error/i.test(logs);
-      return hasAuthError ||
+      return hasErrorEvent ||
+        hasApiErrorEnvelope ||
+        hasAuthError ||
         hasDeploymentError ||
         hasQuotaError ||
-        hasContentFilter ||
-        hasAiderError
+        hasContentFilter
         ? 1
         : 0;
     }

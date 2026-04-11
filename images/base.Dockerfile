@@ -50,9 +50,6 @@ RUN curl -fsSL https://opencode.ai/install | bash \
 # OpenAI Codex CLI (used by codex agent type for OpenAI models)
 RUN npm install -g @openai/codex
 
-# aider — AI coding assistant that supports Azure OpenAI (used by azure-foundry agent type)
-RUN pip3 install --break-system-packages --quiet aider-chat && aider --version
-
 # Google Gemini CLI
 RUN npm install -g @google/gemini-cli
 
