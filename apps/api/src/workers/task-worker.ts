@@ -1646,6 +1646,7 @@ export function buildAgentCommand(
             ]
           : [`export OPENAI_API_KEY="$AZURE_FOUNDRY_API_KEY"`];
       return [
+        `echo "[optio] Azure Foundry config: OPENAI_BASE_URL=${env.OPENAI_BASE_URL ?? "NOT SET"} DEPLOYMENT=${env.OPTIO_AZURE_FOUNDRY_DEPLOYMENT ?? "NOT SET"} AUTH=${env.OPTIO_AZURE_FOUNDRY_AUTH_MODE ?? "NOT SET"}"`,
         ...endpointSetup,
         ...apiVersionSetup,
         ...authSetup,
